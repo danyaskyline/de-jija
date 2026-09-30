@@ -54,6 +54,7 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.breakdown.stackRoll).toBe(40);
     expect(result.damageDealt).toBe(40);
     expect(result.defenderHpAfter).toBe(blackDragon.stats.hp - 40);
+    expect(result.defenderDefeated).toBe(false);
     // The antimage carries NoRetaliation, so the dragon never hits back.
     expect(result.retaliationTriggered).toBe(false);
 
@@ -352,12 +353,28 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.retaliationTriggered).toBe(false);
   });
 
-  it('18. a defender killed by the hit cannot retaliate', () => {
+  it('18. a defender killed by the hit cannot retaliate, and its HP is clamped to 0', () => {
     const weakenedGoblin: CombatUnit = { ...goblin, currentHp: 5 };
     const result = resolveAttack(swordsman, weakenedGoblin, { random: minRoll }); // 11 damage vs 5 hp
 
-    expect(result.defenderHpAfter).toBeLessThanOrEqual(0);
+    expect(result.defenderHpAfter).toBe(0); // never negative
+    expect(result.defenderDefeated).toBe(true);
     expect(result.retaliationTriggered).toBe(false);
+  });
+
+  it('18b. overkill damage far above the total HP stays at 0 and still stops the retaliation', () => {
+    // 5 dragons (roll 30 * 5 = 150) vs a goblin: attack 15 vs defense 3 -> x1.6 -> 240 damage
+    // against 50 HP. The raw difference is -190 — that is the value that used to leak out.
+    const dragonStack: CombatUnit = { ...blackDragon, stackCount: 5 };
+    const result = resolveAttack(dragonStack, goblin, { random: minRoll });
+
+    expect(result.breakdown.stackRoll).toBe(150);
+    expect(result.damageDealt).toBe(240);
+    expect(result.defenderHpAfter).toBe(0); // clamped, not -190
+    expect(result.defenderDefeated).toBe(true);
+    // A destroyed stack never hits back — decided by the flag, not by the raw number.
+    expect(result.retaliationTriggered).toBe(false);
+    expect(result.notes.some((note) => note.includes('the stack is destroyed'))).toBe(true);
   });
 
   it('19. the function does not mutate its inputs (it is pure)', () => {

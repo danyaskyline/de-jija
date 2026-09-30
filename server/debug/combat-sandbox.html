@@ -39,17 +39,26 @@
       .banner strong {
         color: #ffb84d;
       }
-      .units {
+      /* Three columns on a wide screen: attacker | attack parameters + result | defender.
+         Each panel scrolls inside itself, so the page itself never scrolls. */
+      .layout {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        max-width: 1000px;
+        grid-template-columns: 330px minmax(0, 1fr) 330px;
+        gap: 14px;
+        align-items: start;
+      }
+      @media (max-width: 1200px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
       }
       section {
         background: #1c1f26;
         border: 1px solid #2c313b;
         border-radius: 8px;
         padding: 12px 14px;
+        max-height: calc(100vh - 165px);
+        overflow-y: auto;
       }
       .row {
         display: grid;
@@ -162,38 +171,40 @@
       каждый промежуточный шаг расчёта. В <code>NODE_ENV=production</code> роут отключён. Удалить перед Phase 1.
     </div>
 
-    <div class="units">
+    <div class="layout">
       <section>
         <h2>Атакующий</h2>
         <div id="attacker-fields"></div>
       </section>
+
+      <section>
+        <h2>Удар: параметры и результат</h2>
+        <div id="context-fields"></div>
+        <div class="row">
+          <label for="isMoralePenalized">isMoralePenalized — штраф морали</label>
+          <input id="isMoralePenalized" type="checkbox" />
+        </div>
+        <div class="row">
+          <label for="isRetaliation">isRetaliation — это ответный удар</label>
+          <input id="isRetaliation" type="checkbox" />
+        </div>
+        <!-- type="button": even if this ever ends up inside a form, it must not submit it. -->
+        <button id="strike" type="button">Ударить</button>
+        <div id="result">
+          <span class="hint">Нажмите «Ударить», чтобы увидеть результат.</span>
+        </div>
+        <p class="hint">
+          Мастерства героя (melee/ranged/magicOffenseBonusPercent) и defensiveArmorReductionPercent объявлены в коде
+          заглушками на 0: в формулу они пока не входят, и resolveAttack сообщает об этом в notes, если передать ненулевое
+          значение.
+        </p>
+      </section>
+
       <section>
         <h2>Защитник</h2>
         <div id="defender-fields"></div>
       </section>
     </div>
-
-    <section style="margin-top: 16px; max-width: 1000px">
-      <h2>Параметры удара (context)</h2>
-      <div id="context-fields"></div>
-      <div class="row">
-        <label for="isMoralePenalized">isMoralePenalized — штраф морали</label>
-        <input id="isMoralePenalized" type="checkbox" />
-      </div>
-      <div class="row">
-        <label for="isRetaliation">isRetaliation — это ответный удар</label>
-        <input id="isRetaliation" type="checkbox" />
-      </div>
-      <p class="hint">
-        Мастерства героя (melee/ranged/magicOffenseBonusPercent) и defensiveArmorReductionPercent объявлены в коде
-        заглушками на 0: в формулу они пока не входят, и resolveAttack сообщает об этом в notes, если передать ненулевое
-        значение.
-      </p>
-    </section>
-
-    <button id="strike">Ударить</button>
-
-    <div id="result"><span class="hint">Заполните параметры и нажмите «Ударить».</span></div>
 
     <script>
       // DEBUG-ONLY page logic: builds the forms and calls POST /debug/attack.
@@ -437,8 +448,19 @@
         target.append(table);
 
         target.append(node('div', fmt(result.damageDealt), 'total'));
-        target.append(node('div', 'ИТОГОВЫЙ УРОН (округление вниз, минимум 1)', 'hint'));
-        target.append(node('div', 'HP защитника после удара: ' + fmt(result.defenderHpAfter), 'hint'));
+        target.append(node('div', 'ИТОГОВЫЙ УРОН (округление вниз, минимум = minimumDamage из конфига)', 'hint'));
+        target.append(
+          node(
+            'div',
+            'HP защитника после удара: ' +
+              fmt(result.defenderHpAfter) +
+              (result.defenderDefeated ? ' (стек уничтожен)' : ''),
+            'hint',
+          ),
+        );
+        target.append(
+          node('div', 'Стек уничтожен (defenderDefeated): ' + (result.defenderDefeated ? 'да' : 'нет'), 'hint'),
+        );
         target.append(
           node('div', 'Ответка (retaliationTriggered): ' + (result.retaliationTriggered ? 'да' : 'нет'), 'hint'),
         );

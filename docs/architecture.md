@@ -93,7 +93,7 @@ MobGroupSpawn { mobs: [{entityId, mobType, x, y}, ...] }
 Изолированная чистая функция, не размазанная по боевому движку (`server/src/combat/resolveAttack.ts`):
 ```
 resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext, rules?: CombatRules)
-  → { damageDealt, defenderHpAfter, retaliationTriggered, blockedByImmunity, breakdown, notes }
+  → { damageDealt, defenderHpAfter, defenderDefeated, retaliationTriggered, blockedByImmunity, breakdown, notes }
 ```
 `rules` по умолчанию — коэффициенты баланса, загруженные в память при старте сервера; `context.random` инжектится, поэтому тесты полностью детерминированы.
 
@@ -110,7 +110,8 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 7. **Магическое сопротивление** — `magicResistPercent` снижает урон магической атаки на этот процент (только для магических атак, значение приводится к диапазону 0..100); это частичное снижение, а не блок.
 8. **Мораль** — при `isMoralePenalized = true` итог умножается на `moralePenaltyMultiplier`.
 9. **Минимум урона** — итог округляется вниз и не может быть меньше `minimumDamage` (тоже из конфига).
-10. **Ответка** — возможна, если у атакующего нет `NoRetaliation`, защитник жив после удара и текущий удар не является ответкой на ответку (`isRetaliation`).
+10. **Применение урона** — HP защитника уменьшаются на `damageDealt`, но не ниже нуля: `defenderHpAfter = max(0, currentHp − damageDealt)`. Отрицательное HP в игре бессмысленно, поэтому уничтоженный стек — это явное состояние `defenderDefeated = (defenderHpAfter === 0)`, а не «минус 190 HP».
+11. **Ответка** — возможна, если у атакующего нет `NoRetaliation`, стек защитника НЕ уничтожен (проверка идёт через `defenderDefeated`, а не через сырое число) и текущий удар не является ответкой на ответку (`isRetaliation`).
 
 Конфигурация баланса — файл, НЕ БД. Все коэффициенты формулы лежат в `config/combat-rules.json` (`attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`, `defensePenaltyFloorPercent`, `magicResistIsPercentReduction`, `moralePenaltyMultiplier`, `minimumDamage`), читаются ОДИН раз при старте сервера в память (`server/src/combat/combatRules.ts`) и передаются в `resolveAttack`; сам `resolveAttack` файл никогда не читает. Битый или неполный файл валит старт с понятным сообщением (например «отсутствует обязательное поле minimumDamage»). Файл правится руками и версионируется git — см. decisions.md, 012.
 

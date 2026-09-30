@@ -76,7 +76,10 @@ export type DamageBreakdown = {
 
 export type AttackResult = {
   damageDealt: number;
+  /** Remaining hit points of the defender, never negative: 0 means the stack is gone. */
   defenderHpAfter: number;
+  /** True when this hit left the defender with 0 HP (the stack is destroyed). */
+  defenderDefeated: boolean;
   retaliationTriggered: boolean;
   blockedByImmunity: boolean;
   /** Step-by-step numbers behind damageDealt, for debugging. */
@@ -328,15 +331,24 @@ export function resolveAttack(
   notes.push(...pipeline.notes);
   const { breakdown } = pipeline;
 
-  // Step 10 (apply).
-  const defenderHpAfter = defender.currentHp - breakdown.finalDamage;
+  // Step 10 (apply). HP is clamped at zero: "-193 HP" has no meaning in the game,
+  // and a destroyed stack must be an explicit state, not a negative number.
+  const defenderHpAfter = Math.max(0, defender.currentHp - breakdown.finalDamage);
+  const defenderDefeated = defenderHpAfter === 0;
+
+  if (defenderDefeated && breakdown.finalDamage > defender.currentHp) {
+    notes.push(
+      `damage (${breakdown.finalDamage}) exceeded the remaining HP (${defender.currentHp}): the stack is destroyed`,
+    );
+  }
 
   // Step 11 (retaliation), one uniform rule for every attack:
   //   - the attacker must not carry NoRetaliation;
-  //   - the defender must still be alive;
+  //   - the defender must still be alive — checked through defenderDefeated, so a
+  //     stack reduced to 0 HP can never hit back;
   //   - this attack must not itself be a retaliation (no counter-to-the-counter).
   const retaliationTriggered =
-    !hasTag(attacker, 'NoRetaliation') && defenderHpAfter > 0 && context.isRetaliation !== true;
+    !hasTag(attacker, 'NoRetaliation') && !defenderDefeated && context.isRetaliation !== true;
 
   if (blockedByImmunity && retaliationTriggered) {
     notes.push(
@@ -349,6 +361,7 @@ export function resolveAttack(
   return {
     damageDealt: breakdown.finalDamage,
     defenderHpAfter,
+    defenderDefeated,
     retaliationTriggered,
     blockedByImmunity,
     breakdown,
