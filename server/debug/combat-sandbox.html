@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DEBUG — песочница боя (de-jija)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 16px 20px 70px;
+        background: #14161a;
+        color: #e6e6e6;
+        font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 10px;
+        color: #9fd3ff;
+      }
+      .hint {
+        color: #8b95a5;
+      }
+      .banner {
+        background: #4a2c00;
+        border: 1px solid #a86a00;
+        color: #ffd79a;
+        padding: 10px 12px;
+        border-radius: 6px;
+        margin: 10px 0 18px;
+        max-width: 1000px;
+      }
+      .banner strong {
+        color: #ffb84d;
+      }
+      .units {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        max-width: 1000px;
+      }
+      section {
+        background: #1c1f26;
+        border: 1px solid #2c313b;
+        border-radius: 8px;
+        padding: 12px 14px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 130px;
+        gap: 8px;
+        align-items: center;
+        margin: 5px 0;
+      }
+      .row.wide {
+        grid-template-columns: 1fr;
+      }
+      .row label {
+        color: #b9c2cf;
+      }
+      input {
+        background: #0f1116;
+        color: #e6e6e6;
+        border: 1px solid #39404d;
+        border-radius: 5px;
+        padding: 5px 7px;
+        font: inherit;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid #2c313b;
+      }
+      .tags label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #cfe3ff;
+      }
+      .tags input,
+      .row input[type="checkbox"] {
+        width: auto;
+      }
+      button {
+        margin-top: 16px;
+        background: #2f6feb;
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        padding: 11px 24px;
+        font: inherit;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #3d7ff5;
+      }
+      #result {
+        margin-top: 18px;
+        max-width: 1000px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        max-width: 760px;
+      }
+      td {
+        padding: 4px 10px 4px 0;
+        border-bottom: 1px solid #262b34;
+      }
+      td.value {
+        text-align: right;
+        color: #d8e6ff;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .total {
+        font-size: 34px;
+        font-weight: 700;
+        color: #7dffa8;
+        margin: 16px 0 0;
+      }
+      .notes {
+        margin: 6px 0 0;
+        padding-left: 20px;
+        color: #b9c2cf;
+      }
+      .error {
+        color: #ff9b9b;
+      }
+      details {
+        margin-top: 14px;
+        color: #93a0b0;
+      }
+      pre {
+        background: #0f1116;
+        border: 1px solid #2c313b;
+        border-radius: 6px;
+        padding: 10px;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DEBUG: песочница боя <span class="hint">de-jija</span></h1>
+
+    <div class="banner">
+      <strong>Отладочный инструмент разработчика.</strong>
+      Отдельный роут <code>/debug/combat-sandbox</code>: не часть игрового клиента, не связан с авторизацией персонажа,
+      ничего не сохраняет. Вызывает ту же чистую функцию <code>resolveAttack</code>, что и реальный бой, и показывает
+      каждый промежуточный шаг расчёта. В <code>NODE_ENV=production</code> роут отключён. Удалить перед Phase 1.
+    </div>
+
+    <div class="units">
+      <section>
+        <h2>Атакующий</h2>
+        <div id="attacker-fields"></div>
+      </section>
+      <section>
+        <h2>Защитник</h2>
+        <div id="defender-fields"></div>
+      </section>
+    </div>
+
+    <section style="margin-top: 16px; max-width: 1000px">
+      <h2>Параметры удара (context)</h2>
+      <div id="context-fields"></div>
+      <div class="row">
+        <label for="isMoralePenalized">isMoralePenalized — штраф морали</label>
+        <input id="isMoralePenalized" type="checkbox" />
+      </div>
+      <div class="row">
+        <label for="isRetaliation">isRetaliation — это ответный удар</label>
+        <input id="isRetaliation" type="checkbox" />
+      </div>
+      <p class="hint">
+        Мастерства героя (melee/ranged/magicOffenseBonusPercent) и defensiveArmorReductionPercent объявлены в коде
+        заглушками на 0: в формулу они пока не входят, и resolveAttack сообщает об этом в notes, если передать ненулевое
+        значение.
+      </p>
+    </section>
+
+    <button id="strike">Ударить</button>
+
+    <div id="result"><span class="hint">Заполните параметры и нажмите «Ударить».</span></div>
+
+    <script>
+      // DEBUG-ONLY page logic: builds the forms and calls POST /debug/attack.
+      // Plain JavaScript on purpose: this page is a developer tool, not the game.
+
+      /** CombatUnit fields shown for both sides. */
+      const UNIT_FIELDS = [
+        { key: 'hp', label: 'HP (максимум)', value: 90 },
+        { key: 'attack', label: 'Атака', value: 12 },
+        { key: 'defense', label: 'Защита', value: 8 },
+        { key: 'speed', label: 'Скорость', value: 5 },
+        { key: 'damageMin', label: 'Урон за юнита, мин', value: 40 },
+        { key: 'damageMax', label: 'Урон за юнита, макс', value: 60 },
+        { key: 'stackCount', label: 'Юнитов в стеке', value: 1 },
+      ];
+
+      const TAGS = ['NoRetaliation', 'AreaAttack', 'MagicImmune', 'MagicDamage', 'Piercing'];
+
+      /** Attack modifiers: they go into resolveAttack's context. */
+      const CONTEXT_FIELDS = [
+        { key: 'flatDamageBonus', label: 'flatDamageBonus (единицы урона)', value: 0 },
+        { key: 'percentDamageBonus', label: 'percentDamageBonus (%)', value: 0 },
+        { key: 'magicResistPercent', label: 'magicResistPercent (% — только магия)', value: 0 },
+      ];
+
+      /** Starting values: the antimage vs the black dragon from the unit tests. */
+      const PRESETS = {
+        attacker: {
+          name: 'Антимаг (ап)',
+          hp: 90,
+          attack: 12,
+          defense: 8,
+          speed: 5,
+          damageMin: 40,
+          damageMax: 60,
+          stackCount: 1,
+          tags: ['NoRetaliation', 'AreaAttack'],
+        },
+        defender: {
+          name: 'Чёрный дракон',
+          hp: 200,
+          attack: 15,
+          defense: 12,
+          speed: 5,
+          damageMin: 30,
+          damageMax: 45,
+          stackCount: 1,
+          tags: ['MagicImmune'],
+        },
+      };
+
+      /** Short element factory, so the code below stays readable. */
+      function node(tag, text, className) {
+        const element = document.createElement(tag);
+        if (text !== undefined && text !== null) element.textContent = String(text);
+        if (className) element.className = className;
+        return element;
+      }
+
+      /** Adds one "label + number input" row. */
+      function numberRow(container, id, labelText, value, placeholder) {
+        const row = node('div', null, 'row');
+        const label = node('label', labelText);
+        label.htmlFor = id;
+
+        const input = node('input');
+        input.id = id;
+        input.type = 'number';
+        input.step = 'any';
+        if (placeholder) input.placeholder = placeholder;
+        else input.value = String(value);
+
+        row.append(label, input);
+        container.append(row);
+
+        return input;
+      }
+
+      function buildUnitForm(role) {
+        const container = document.getElementById(role + '-fields');
+        const preset = PRESETS[role];
+
+        const nameRow = node('div', null, 'row wide');
+        const nameInput = node('input');
+        nameInput.id = role + '-name';
+        nameInput.value = preset.name;
+        nameRow.append(nameInput);
+        container.append(nameRow);
+
+        UNIT_FIELDS.forEach((field) => {
+          numberRow(container, role + '-' + field.key, field.label, preset[field.key]);
+        });
+
+        numberRow(container, role + '-currentHp', 'Текущее HP (пусто = максимум)', '', '= HP');
+
+        const tagBox = node('div', null, 'tags');
+        TAGS.forEach((tag) => {
+          const label = node('label');
+          const checkbox = node('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = role + '-tag-' + tag;
+          checkbox.checked = preset.tags.indexOf(tag) !== -1;
+          label.append(checkbox, node('span', tag));
+          tagBox.append(label);
+        });
+        container.append(tagBox);
+      }
+
+      function buildContextForm() {
+        const container = document.getElementById('context-fields');
+
+        CONTEXT_FIELDS.forEach((field) => {
+          numberRow(container, 'context-' + field.key, field.label, field.value);
+        });
+
+        numberRow(
+          container,
+          'context-fixedRandomValue',
+          'Зафиксировать бросок (0..0.99, пусто = случайно)',
+          '',
+          'случайно',
+        );
+      }
+
+      function readNumber(id) {
+        const raw = document.getElementById(id).value;
+
+        return raw === '' ? 0 : Number(raw);
+      }
+
+      function readUnit(role) {
+        const stat = (key) => readNumber(role + '-' + key);
+        const stats = {
+          hp: stat('hp'),
+          attack: stat('attack'),
+          defense: stat('defense'),
+          speed: stat('speed'),
+          damageMin: stat('damageMin'),
+          damageMax: stat('damageMax'),
+        };
+        const currentHpRaw = document.getElementById(role + '-currentHp').value;
+
+        return {
+          id: role,
+          name: document.getElementById(role + '-name').value,
+          stats: stats,
+          tags: TAGS.filter((tag) => document.getElementById(role + '-tag-' + tag).checked),
+          stackCount: stat('stackCount'),
+          currentHp: currentHpRaw === '' ? stats.hp : Number(currentHpRaw),
+        };
+      }
+
+      function readContext() {
+        const context = {};
+
+        CONTEXT_FIELDS.forEach((field) => {
+          context[field.key] = readNumber('context-' + field.key);
+        });
+
+        if (document.getElementById('isMoralePenalized').checked) context.isMoralePenalized = true;
+        if (document.getElementById('isRetaliation').checked) context.isRetaliation = true;
+
+        const fixedField = document.getElementById('context-fixedRandomValue');
+        if (fixedField.value !== '') {
+          const fixedRoll = Number(fixedField.value);
+          if (!Number.isFinite(fixedRoll) || fixedRoll < 0 || fixedRoll >= 1) {
+            throw new Error('«Зафиксировать бросок» должно быть числом от 0 до 0.99');
+          }
+          context.fixedRandomValue = fixedRoll;
+        }
+
+        return context;
+      }
+
+      /** 12 -> "12", 24.15 -> "24.15" (two decimals only when needed). */
+      function fmt(value) {
+        const rounded = Math.round(value * 100) / 100;
+
+        return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+      }
+
+      let lastRequest = null;
+
+      async function strike() {
+        const target = document.getElementById('result');
+        target.innerHTML = '';
+        target.append(node('span', 'Считаем…', 'hint'));
+
+        try {
+          const body = {
+            attacker: readUnit('attacker'),
+            defender: readUnit('defender'),
+            context: readContext(),
+          };
+          lastRequest = body;
+
+          const response = await fetch('/debug/attack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await response.json();
+
+          target.innerHTML = '';
+          render(data);
+        } catch (error) {
+          target.innerHTML = '';
+          target.append(node('p', 'Ошибка: ' + error.message, 'error'));
+          target.append(node('p', 'Если это сеть — сервер запущен? Команда: npm run dev:server', 'hint'));
+        }
+      }
+
+      function render(result) {
+        const target = document.getElementById('result');
+
+        if (result.error) {
+          target.append(node('p', 'Сервер отклонил запрос: ' + result.error, 'error'));
+          return;
+        }
+
+        const b = result.breakdown;
+        const rows = [
+          ['Бросок урона стека (damageMin..damageMax × stackCount)', fmt(b.stackRoll)],
+          ['Flat-бонус (единицы урона)', (b.flatBonusApplied >= 0 ? '+' : '') + fmt(b.flatBonusApplied)],
+          ['После flat-бонуса', fmt(b.afterFlatBonus)],
+          ['Множитель атака/защита', '×' + fmt(b.attackDefenseMultiplier)],
+          ['После множителя атака/защита', fmt(b.afterAttackDefense)],
+          ['Процентный бонус', (b.percentBonusApplied >= 0 ? '+' : '') + fmt(b.percentBonusApplied) + '%'],
+          ['После процентного бонуса', fmt(b.afterPercentBonus)],
+          ['Магический резист (только магия)', '−' + fmt(b.magicResistApplied) + '%'],
+          ['После магического резиста', fmt(b.afterMagicResist)],
+          ['Множитель морали', '×' + fmt(b.moraleApplied)],
+        ];
+
+        const table = node('table');
+        rows.forEach((row) => {
+          const tr = node('tr');
+          tr.append(node('td', row[0]), node('td', row[1], 'value'));
+          table.append(tr);
+        });
+        target.append(table);
+
+        target.append(node('div', fmt(result.damageDealt), 'total'));
+        target.append(node('div', 'ИТОГОВЫЙ УРОН (округление вниз, минимум 1)', 'hint'));
+        target.append(node('div', 'HP защитника после удара: ' + fmt(result.defenderHpAfter), 'hint'));
+        target.append(
+          node('div', 'Ответка (retaliationTriggered): ' + (result.retaliationTriggered ? 'да' : 'нет'), 'hint'),
+        );
+        target.append(
+          node('div', 'Полный блок иммунитетом (blockedByImmunity): ' + (result.blockedByImmunity ? 'да' : 'нет'), 'hint'),
+        );
+
+        target.append(node('div', 'Заметки движка (notes):', 'hint'));
+        const notesList = node('ul', null, 'notes');
+        result.notes.forEach((note) => notesList.append(node('li', note)));
+        target.append(notesList);
+
+        const details = node('details');
+        details.append(node('summary', 'Показать запрос и сырой JSON ответа'));
+        details.append(node('pre', JSON.stringify({ request: lastRequest, response: result }, null, 2)));
+        target.append(details);
+      }
+
+      buildUnitForm('attacker');
+      buildUnitForm('defender');
+      buildContextForm();
+      document.getElementById('strike').addEventListener('click', strike);
+      // Ctrl+Enter strikes too: handy while tweaking numbers.
+      document.addEventListener('keydown', (event) => {
+        if (event.ctrlKey && event.key === 'Enter') strike();
+      });
+    </script>
+  </body>
+</html>

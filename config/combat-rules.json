@@ -1,0 +1,9 @@
+{
+  "attackAdvantagePercentPerPoint": 5,
+  "attackAdvantageCapPercent": 400,
+  "defensePenaltyPercentPerPoint": 2.5,
+  "defensePenaltyFloorPercent": 80,
+  "magicResistIsPercentReduction": true,
+  "moralePenaltyMultiplier": 0.9,
+  "minimumDamage": 1
+}

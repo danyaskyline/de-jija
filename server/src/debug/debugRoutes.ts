@@ -1,0 +1,185 @@
+/**
+ * DEBUG-ONLY HTTP endpoints for the combat sandbox.
+ *
+ * This is a developer tool, NOT part of the game: no player authorization, no
+ * game state, no protocol messages in /shared. It is mounted with a single line
+ * in index.ts, so removing it later is a one-line change.
+ *
+ * // DEBUG-ONLY, remove before Phase 1 (docs/conventions.md)
+ *
+ * Why HTTP and not WebSocket: the sandbox is a plain request/response tool
+ * ("fill the form -> press the button -> read the breakdown"). HTTP keeps the
+ * game protocol clean (WebSocket stays reserved for the real game messages),
+ * works with curl for scripted checks and needs no reconnect handling.
+ */
+
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import express, { type Router } from 'express';
+
+import type { AbilityTag, CombatUnit, UnitStats } from '@de-jija/shared';
+
+import { resolveAttack, type AttackContext } from '../combat/resolveAttack';
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+
+/** The sandbox page: plain HTML, no build step, no PixiJS. */
+const SANDBOX_PAGE_PATH = path.resolve(currentDir, '../../debug/combat-sandbox.html');
+
+/** Stats that must be present in a request and must be numbers. */
+const STAT_FIELDS = ['hp', 'attack', 'defense', 'speed', 'damageMin', 'damageMax'] as const;
+
+/** Tags the sandbox may send; anything else is dropped instead of trusted. */
+const KNOWN_TAGS: readonly AbilityTag[] = [
+  'NoRetaliation',
+  'AreaAttack',
+  'MagicImmune',
+  'Piercing',
+  'MagicDamage',
+];
+
+/** Numbers the sandbox may pass as attack modifiers. */
+const CONTEXT_NUMBER_FIELDS = [
+  'flatDamageBonus',
+  'percentDamageBonus',
+  'magicResistPercent',
+  'meleeOffenseBonusPercent',
+  'rangedOffenseBonusPercent',
+  'magicOffenseBonusPercent',
+  'defensiveArmorReductionPercent',
+] as const;
+
+type ParsedRequest = { attacker: CombatUnit; defender: CombatUnit; context: AttackContext };
+type ParseError = { error: string };
+
+/** Reads one unit sent by the sandbox form. Returns a readable error instead of throwing. */
+function parseUnit(value: unknown, role: string): { unit: CombatUnit } | ParseError {
+  if (typeof value !== 'object' || value === null) {
+    return { error: `${role}: ожидался объект с полями юнита` };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const rawStats = raw.stats;
+
+  if (typeof rawStats !== 'object' || rawStats === null) {
+    return { error: `${role}: отсутствует объект stats` };
+  }
+
+  const statsSource = rawStats as Record<string, unknown>;
+  const stats: UnitStats = { hp: 0, attack: 0, defense: 0, speed: 0, damageMin: 0, damageMax: 0 };
+
+  for (const field of STAT_FIELDS) {
+    const fieldValue = statsSource[field];
+
+    if (typeof fieldValue !== 'number' || !Number.isFinite(fieldValue)) {
+      return { error: `${role}.stats.${field}: ожидалось число` };
+    }
+
+    stats[field] = fieldValue;
+  }
+
+  const tags = Array.isArray(raw.tags)
+    ? raw.tags.filter((tag): tag is AbilityTag => KNOWN_TAGS.includes(tag as AbilityTag))
+    : [];
+
+  const stackCount =
+    typeof raw.stackCount === 'number' && raw.stackCount >= 1 ? Math.trunc(raw.stackCount) : 1;
+
+  const currentHp =
+    typeof raw.currentHp === 'number' && Number.isFinite(raw.currentHp) ? raw.currentHp : stats.hp;
+
+  return {
+    unit: {
+      id: typeof raw.id === 'string' ? raw.id : role,
+      name: typeof raw.name === 'string' ? raw.name : role,
+      stats,
+      tags,
+      currentHp,
+      stackCount,
+    },
+  };
+}
+
+/** Reads the attack modifiers; unknown or non-numeric values are ignored. */
+function parseContext(value: unknown): AttackContext {
+  if (typeof value !== 'object' || value === null) {
+    return {};
+  }
+
+  const raw = value as Record<string, unknown>;
+  const context: AttackContext = {};
+
+  for (const field of CONTEXT_NUMBER_FIELDS) {
+    const fieldValue = raw[field];
+
+    if (typeof fieldValue === 'number' && Number.isFinite(fieldValue) && fieldValue !== 0) {
+      context[field] = fieldValue;
+    }
+  }
+
+  if (raw.isMoralePenalized === true) {
+    context.isMoralePenalized = true;
+  }
+  if (raw.isRetaliation === true) {
+    context.isRetaliation = true;
+  }
+
+  // Handy for checking the arithmetic by hand: freeze the random roll.
+  const fixedRoll = raw.fixedRandomValue;
+  if (typeof fixedRoll === 'number' && fixedRoll >= 0 && fixedRoll < 1) {
+    context.random = () => fixedRoll;
+  }
+
+  return context;
+}
+
+/** Validates the whole sandbox request body. */
+function parseRequestBody(body: unknown): ParsedRequest | ParseError {
+  if (typeof body !== 'object' || body === null) {
+    return { error: 'тело запроса должно быть JSON-объектом' };
+  }
+
+  const raw = body as Record<string, unknown>;
+  const attacker = parseUnit(raw.attacker, 'attacker');
+  if ('error' in attacker) {
+    return attacker;
+  }
+
+  const defender = parseUnit(raw.defender, 'defender');
+  if ('error' in defender) {
+    return defender;
+  }
+
+  return { attacker: attacker.unit, defender: defender.unit, context: parseContext(raw.context) };
+}
+
+/** Builds the debug router. Mounted at /debug in index.ts. */
+export function createDebugRouter(): Router {
+  const router = express.Router();
+
+  // Only the debug router parses JSON bodies: the game routes stay untouched.
+  router.use(express.json({ limit: '64kb' }));
+
+  // The sandbox page itself.
+  router.get('/combat-sandbox', (_request, response) => {
+    response.sendFile(SANDBOX_PAGE_PATH);
+  });
+
+  // Resolves one attack and returns the full breakdown: the tool behind the page.
+  router.post('/attack', (request, response) => {
+    const parsed = parseRequestBody(request.body);
+
+    if ('error' in parsed) {
+      response.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    console.log(
+      `[debug] attack: ${parsed.attacker.name} (${parsed.attacker.tags.join(', ') || 'no tags'}) -> ${parsed.defender.name}`,
+    );
+    response.json(resolveAttack(parsed.attacker, parsed.defender, parsed.context));
+  });
+
+  return router;
+}

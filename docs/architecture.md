@@ -90,12 +90,39 @@ MobGroupSpawn { mobs: [{entityId, mobType, x, y}, ...] }
 - **Clan / War** — clan_id, список участников; отдельно флаг активной войны между двумя clan_id.
 
 ## Формулы урона
-Изолированная чистая функция, не размазанная по боевому движку:
+Изолированная чистая функция, не размазанная по боевому движку (`server/src/combat/resolveAttack.ts`):
 ```
-resolveAttack(attacker: {stats, tags}, defender: {stats, tags}, context)
-  → { damageDealt, retaliation: bool, appliedEffects: [...] }
+resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext, rules?: CombatRules)
+  → { damageDealt, defenderHpAfter, retaliationTriggered, blockedByImmunity, breakdown, notes }
 ```
-Фиксированный порядок шагов: теги атакующего → теги защитника → базовый расчёт по статам → модификаторы морали/удачи → применение. Должна быть покрыта юнит-тестами на конкретных парах юнитов (это единственный практичный способ проверить все хитрые комбинации иммунитетов/особых свойств).
+`rules` по умолчанию — коэффициенты баланса, загруженные в память при старте сервера; `context.random` инжектится, поэтому тесты полностью детерминированы.
+
+Фиксированный порядок шагов (теги атакующего → теги защитника → расчёт по статам → модификаторы → применение):
+1. **Теги атакующего** — тип атаки: `MagicDamage` на атакующем = магическая, иначе физическая.
+2. **Теги защитника** — `MagicImmune` даёт ПОЛНЫЙ блок входящей магии (это не то же самое, что частичный `magicResistPercent`).
+3. **Бросок урона стека** — `roll(damageMin × stackCount .. damageMax × stackCount)`, `stackCount` по умолчанию 1.
+4. **Flat-бонус** — `flatDamageBonus` в единицах урона, применяется ДО множителя атака/защита.
+5. **Множитель атака/защита** — по коэффициентам из `config/combat-rules.json`:
+   - `attack > defense`: `min(attackAdvantageCapPercent/100, 1 + attackAdvantagePercentPerPoint/100 × (attack − defense))`;
+   - `attack < defense`: `max(defensePenaltyFloorPercent/100, 1 − defensePenaltyPercentPerPoint/100 × (defense − attack))`;
+   - равны: `1`.
+6. **Процент-бонус** — `percentDamageBonus`, применяется ПОСЛЕ множителя: `× (1 + percentDamageBonus/100)`.
+7. **Магическое сопротивление** — `magicResistPercent` снижает урон магической атаки на этот процент (только для магических атак, значение приводится к диапазону 0..100); это частичное снижение, а не блок.
+8. **Мораль** — при `isMoralePenalized = true` итог умножается на `moralePenaltyMultiplier`.
+9. **Минимум урона** — итог округляется вниз и не может быть меньше `minimumDamage` (тоже из конфига).
+10. **Ответка** — возможна, если у атакующего нет `NoRetaliation`, защитник жив после удара и текущий удар не является ответкой на ответку (`isRetaliation`).
+
+Конфигурация баланса — файл, НЕ БД. Все коэффициенты формулы лежат в `config/combat-rules.json` (`attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`, `defensePenaltyFloorPercent`, `magicResistIsPercentReduction`, `moralePenaltyMultiplier`, `minimumDamage`), читаются ОДИН раз при старте сервера в память (`server/src/combat/combatRules.ts`) и передаются в `resolveAttack`; сам `resolveAttack` файл никогда не читает. Битый или неполный файл валит старт с понятным сообщением (например «отсутствует обязательное поле minimumDamage»). Файл правится руками и версионируется git — см. decisions.md, 012.
+
+Отложено осознанно (явные заглушки в `AttackContext`, всегда 0): `meleeOffenseBonusPercent`, `rangedOffenseBonusPercent`, `magicOffenseBonusPercent` (боевые мастерства героя) и `defensiveArmorReductionPercent` (снижение ТОЛЬКО физического урона — контакт и стрелки, никогда магия). Источник (дерево специализаций / предметы / что-то ещё) — открытый вопрос дизайна, текущий этап он не блокирует. Пока логики нет: ненулевое значение заглушки не влияет на расчёт, но попадает в `notes`, чтобы заглушку нельзя было принять за работающий бонус. Также не реализованы `AreaAttack` (нужны позиции на гекс-поле) и `Piercing`.
+
+Отладка: результат содержит `breakdown` — каждое промежуточное значение (`stackRoll`, `flatBonusApplied`, `afterFlatBonus`, `attackDefenseMultiplier`, `afterAttackDefense`, `percentBonusApplied`, `afterPercentBonus`, `magicResistApplied`, `afterMagicResist`, `moraleApplied`, `finalDamage`) плюс `notes`. Ручная проверка — песочница боя (см. следующий раздел). Формула обязана быть покрыта юнит-тестами на конкретных парах юнитов (это единственный практичный способ проверить все хитрые комбинации иммунитетов и особых свойств).
+
+## Отладочный инструмент: песочница боя (временный)
+- `GET /debug/combat-sandbox` — HTML-форма для ручной проверки (`server/debug/combat-sandbox.html`). Не часть игрового клиента, не связана с авторизацией персонажа, ничего не сохраняет.
+- `POST /debug/attack` — принимает параметры атакующего/защитника и context, возвращает полный результат `resolveAttack` с `breakdown`.
+- HTTP выбран вместо WebSocket намеренно: инструмент — это «заполнил форму → получил разбор», а игровой протокол в `/shared` засорять не нужно; endpoint удобно дёргать и через curl.
+- Локальный инструмент разработчика: при `NODE_ENV=production` роут не монтируется, модуль помечен `// DEBUG-ONLY, remove before Phase 1` и удаляется вместе с `server/src/debug/` (docs/conventions.md).
 
 ## Оценка стоимости сервера (грубый ориентир, РФ-хостинг)
 - 50–100 игроков: одна машина (сервер+БД вместе), ~1100–2000 ₽/мес.

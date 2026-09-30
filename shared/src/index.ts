@@ -70,4 +70,10 @@ export type CombatUnit = {
   tags: AbilityTag[];
   /** Current hit points; may be <= 0 for a dead unit. */
   currentHp: number;
+  /**
+   * Number of units in this stack. The damage roll is per unit
+   * (damageMin..damageMax), so the stack roll is multiplied by this value.
+   * Optional — omitted means a stack of 1.
+   */
+  stackCount?: number;
 };
