@@ -26,3 +26,48 @@ export type ClientMessage = PingMessage;
 
 /** Everything the server is allowed to send to the client (grows later). */
 export type ServerMessage = PongMessage;
+
+/* -------------------------------------------------------------------------- *
+ * Combat domain types (combat stage of the walking skeleton).
+ *
+ * These describe a unit for the battle engine only: no map, no hex field and
+ * no position here — positioning arrives later as a separate layer
+ * (see docs/architecture.md, "Бой — модель инстанса").
+ * -------------------------------------------------------------------------- */
+
+/** The numbers that describe a unit in battle. */
+export type UnitStats = {
+  /** Maximum hit points (the current value lives on CombatUnit.currentHp). */
+  hp: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  /** Damage roll range, inclusive on both ends. */
+  damageMin: number;
+  damageMax: number;
+};
+
+/**
+ * Special abilities are TAGS, not separate classes (docs/decisions.md, 004).
+ * The battle engine reads them in a fixed order.
+ *
+ * Implemented in the current iteration: NoRetaliation, MagicImmune, MagicDamage.
+ * Declared but NOT implemented yet: AreaAttack (needs hex positioning),
+ * Piercing (no damage-type interaction yet).
+ */
+export type AbilityTag =
+  | 'NoRetaliation'
+  | 'AreaAttack'
+  | 'MagicImmune'
+  | 'Piercing'
+  | 'MagicDamage';
+
+/** A unit as the battle engine sees it: plain data, no behaviour. */
+export type CombatUnit = {
+  id: string;
+  name: string;
+  stats: UnitStats;
+  tags: AbilityTag[];
+  /** Current hit points; may be <= 0 for a dead unit. */
+  currentHp: number;
+};

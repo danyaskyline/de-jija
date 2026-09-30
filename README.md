@@ -68,6 +68,7 @@ Vite напечатает адрес: `http://localhost:5173/`
 ## Полезные команды
 
 ```
+npm test               — юнит-тесты (vitest): сейчас это боевая логика resolveAttack
 npm run typecheck      — проверка типов во всех пакетах (server, client, shared)
 npm run build:client   — собрать клиент в client/dist
 ```
