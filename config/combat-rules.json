@@ -2,8 +2,14 @@
   "attackAdvantagePercentPerPoint": 5,
   "attackAdvantageCapPercent": 400,
   "defensePenaltyPercentPerPoint": 2.5,
-  "defensePenaltyFloorPercent": 80,
-  "magicResistIsPercentReduction": true,
-  "moralePenaltyMultiplier": 0.9,
+  "defensePenaltyFloorPercent": 30,
+  "luckChanceByLevel": {
+    "1": 10,
+    "2": 25,
+    "3": 40
+  },
+  "luckPositiveMultiplier": 1.5,
+  "luckNegativeMultiplier": 0.75,
+  "moraleBonusAttackMultiplier": 0.8,
   "minimumDamage": 1
 }

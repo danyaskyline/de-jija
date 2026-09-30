@@ -21,6 +21,8 @@ export type CombatFixture = {
   stats: UnitStats;
   tags: AbilityTag[];
   stackCount: number;
+  /** Optional luck level for the sandbox presets (0 = no luck, the common case). */
+  luckLevel?: number;
 };
 
 /** All fixtures in one place. */

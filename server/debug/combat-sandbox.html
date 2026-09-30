@@ -193,8 +193,8 @@
         <h2>Удар: параметры и результат</h2>
         <div id="context-fields"></div>
         <div class="row">
-          <label for="isMoralePenalized">isMoralePenalized — штраф морали</label>
-          <input id="isMoralePenalized" type="checkbox" />
+          <label for="isMoraleBonusAttack">isMoraleBonusAttack — этот удар из-за доп. хода морали</label>
+          <input id="isMoraleBonusAttack" type="checkbox" />
         </div>
         <div class="row">
           <label for="isRetaliation">isRetaliation — это ответный удар</label>
@@ -234,6 +234,7 @@
         { key: 'damageMin', label: 'Урон за юнита, мин' },
         { key: 'damageMax', label: 'Урон за юнита, макс' },
         { key: 'stackCount', label: 'Юнитов в стеке' },
+        { key: 'luckLevel', label: 'Удача юнита (−3..3)' },
       ];
 
       const TAGS = ['NoRetaliation', 'AreaAttack', 'MagicImmune', 'MagicDamage', 'Piercing'];
@@ -242,7 +243,6 @@
       const CONTEXT_FIELDS = [
         { key: 'flatDamageBonus', label: 'flatDamageBonus (единицы урона)' },
         { key: 'percentDamageBonus', label: 'percentDamageBonus (%)' },
-        { key: 'magicResistPercent', label: 'magicResistPercent (% — только магия)' },
         { key: 'heroAttackBonus', label: 'heroAttackBonus (прямая прибавка к атаке героя)' },
         { key: 'heroDefenseBonus', label: 'heroDefenseBonus (прямая прибавка к защите героя)' },
       ];
@@ -319,7 +319,8 @@
         document.getElementById(role + '-name').value = fixture.name;
 
         UNIT_FIELDS.forEach((field) => {
-          const value = field.key === 'stackCount' ? fixture.stackCount : fixture.stats[field.key];
+          const value =
+            field.key === 'stackCount' ? fixture.stackCount : (fixture.stats[field.key] ?? 0);
           document.getElementById(role + '-' + field.key).value = String(value);
         });
 
@@ -343,7 +344,8 @@
         container.append(nameRow);
 
         UNIT_FIELDS.forEach((field) => {
-          const value = field.key === 'stackCount' ? fixture.stackCount : fixture.stats[field.key];
+          const value =
+            field.key === 'stackCount' ? fixture.stackCount : (fixture.stats[field.key] ?? 0);
           numberRow(container, role + '-' + field.key, field.label, value);
         });
 
@@ -372,7 +374,15 @@
         numberRow(
           container,
           'context-fixedRandomValue',
-          'Зафиксировать бросок (0..0.99, пусто = случайно)',
+          'Зафиксировать бросок урона (0..0.99, пусто = случайно)',
+          '',
+          'случайно',
+        );
+
+        numberRow(
+          container,
+          'context-fixedLuckRoll',
+          'Зафиксировать бросок удачи (0..0.99, пусто = случайно)',
           '',
           'случайно',
         );
@@ -403,6 +413,7 @@
           stats: stats,
           tags: TAGS.filter((tag) => document.getElementById(role + '-tag-' + tag).checked),
           stackCount: stackCount,
+          luckLevel: stat('luckLevel'),
           // An empty pool field means "the stack is at full health": HP per unit * stack size.
           currentHp: currentHpRaw === '' ? stats.hp * stackCount : Number(currentHpRaw),
         };
@@ -415,16 +426,28 @@
           context[field.key] = readNumber('context-' + field.key);
         });
 
-        if (document.getElementById('isMoralePenalized').checked) context.isMoralePenalized = true;
+        // Morale only weakens a hit that IS a morale extra attack.
+        if (document.getElementById('isMoraleBonusAttack').checked) {
+          context.isMoraleBonusAttack = true;
+        }
         if (document.getElementById('isRetaliation').checked) context.isRetaliation = true;
 
-        const fixedField = document.getElementById('context-fixedRandomValue');
-        if (fixedField.value !== '') {
-          const fixedRoll = Number(fixedField.value);
+        const fixedRollField = document.getElementById('context-fixedRandomValue');
+        if (fixedRollField.value !== '') {
+          const fixedRoll = Number(fixedRollField.value);
           if (!Number.isFinite(fixedRoll) || fixedRoll < 0 || fixedRoll >= 1) {
-            throw new Error('«Зафиксировать бросок» должно быть числом от 0 до 0.99');
+            throw new Error('«Зафиксировать бросок урона» должно быть числом от 0 до 0.99');
           }
           context.fixedRandomValue = fixedRoll;
+        }
+
+        const fixedLuckField = document.getElementById('context-fixedLuckRoll');
+        if (fixedLuckField.value !== '') {
+          const fixedLuck = Number(fixedLuckField.value);
+          if (!Number.isFinite(fixedLuck) || fixedLuck < 0 || fixedLuck >= 1) {
+            throw new Error('«Зафиксировать бросок удачи» должно быть числом от 0 до 0.99');
+          }
+          context.fixedLuckRoll = fixedLuck;
         }
 
         return context;
@@ -478,18 +501,25 @@
 
         const b = result.breakdown;
         const rows = [
-          ['Бросок урона стека (damageMin..damageMax × stackCount)', fmt(b.stackRoll)],
-          ['Flat-бонус (единицы урона)', (b.flatBonusApplied >= 0 ? '+' : '') + fmt(b.flatBonusApplied)],
-          ['После flat-бонуса', fmt(b.afterFlatBonus)],
-          ['Эффективная атака (attack + heroAttackBonus)', fmt(b.effectiveAttack)],
-          ['Эффективная защита (defense + heroDefenseBonus)', fmt(b.effectiveDefense)],
-          ['Множитель атака/защита', '×' + fmt(b.attackDefenseMultiplier)],
-          ['После множителя атака/защита', fmt(b.afterAttackDefense)],
-          ['Процентный бонус', (b.percentBonusApplied >= 0 ? '+' : '') + fmt(b.percentBonusApplied) + '%'],
-          ['После процентного бонуса', fmt(b.afterPercentBonus)],
-          ['Магический резист (только магия)', '−' + fmt(b.magicResistApplied) + '%'],
-          ['После магического резиста', fmt(b.afterMagicResist)],
-          ['Множитель морали', '×' + fmt(b.moraleApplied)],
+          ['1. Бросок урона стека (damageMin..damageMax × stackCount)', fmt(b.stackRoll)],
+          ['2. Flat-бонус (единицы урона)', (b.flatBonusApplied >= 0 ? '+' : '') + fmt(b.flatBonusApplied)],
+          ['3. После flat-бонуса', fmt(b.afterFlatBonus)],
+          ['4. Эффективная атака (attack + heroAttackBonus)', fmt(b.effectiveAttack)],
+          ['5. Эффективная защита (defense + heroDefenseBonus)', fmt(b.effectiveDefense)],
+          ['6. Множитель атака/защита', '×' + fmt(b.attackDefenseMultiplier)],
+          ['7. После множителя атака/защита', fmt(b.afterAttackDefense)],
+          ['8. Процентный бонус', (b.percentBonusApplied >= 0 ? '+' : '') + fmt(b.percentBonusApplied) + '%'],
+          ['9. После процентного бонуса', fmt(b.afterPercentBonus)],
+          [
+            '10. Удача (уровень ' + b.luckLevel + ', шанс ' + fmt(b.luckTriggerChancePercent) + '%)',
+            b.luckTriggered ? 'сработала: ×' + fmt(b.luckMultiplierApplied) : 'не сработала: ×1',
+          ],
+          ['11. После удачи', fmt(b.afterLuck)],
+          [
+            '12. Мораль (доп. ход)',
+            b.moraleBonusAttackApplied ? 'применена: ×' + fmt(b.moraleMultiplier) : 'не применялась: ×1',
+          ],
+          ['13. После морали', fmt(b.afterMoraleBonus)],
         ];
 
         const table = node('table');

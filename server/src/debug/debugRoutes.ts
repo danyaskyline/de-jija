@@ -44,7 +44,7 @@ const KNOWN_TAGS: readonly AbilityTag[] = [
 const CONTEXT_NUMBER_FIELDS = [
   'flatDamageBonus',
   'percentDamageBonus',
-  'magicResistPercent',
+  'fixedLuckRoll',
   'heroAttackBonus',
   'heroDefenseBonus',
   'meleeOffenseBonusPercent',
@@ -92,6 +92,12 @@ function parseUnit(value: unknown, role: string): { unit: CombatUnit } | ParseEr
   const currentHp =
     typeof raw.currentHp === 'number' && Number.isFinite(raw.currentHp) ? raw.currentHp : stats.hp;
 
+  // Luck level: -3..3, 0 by default (resolveAttack clamps it anyway).
+  const luckLevel =
+    typeof raw.luckLevel === 'number' && Number.isFinite(raw.luckLevel)
+      ? Math.max(-3, Math.min(3, Math.trunc(raw.luckLevel)))
+      : 0;
+
   return {
     unit: {
       id: typeof raw.id === 'string' ? raw.id : role,
@@ -100,6 +106,7 @@ function parseUnit(value: unknown, role: string): { unit: CombatUnit } | ParseEr
       tags,
       currentHp,
       stackCount,
+      luckLevel,
     },
   };
 }
@@ -121,8 +128,8 @@ function parseContext(value: unknown): AttackContext {
     }
   }
 
-  if (raw.isMoralePenalized === true) {
-    context.isMoralePenalized = true;
+  if (raw.isMoraleBonusAttack === true) {
+    context.isMoraleBonusAttack = true;
   }
   if (raw.isRetaliation === true) {
     context.isRetaliation = true;

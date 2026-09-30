@@ -29,29 +29,45 @@ export type CombatRules = {
   attackAdvantageCapPercent: number;
   /** Percent of damage lost per point of (defense - attack), e.g. 2.5 means -2.5%. */
   defensePenaltyPercentPerPoint: number;
-  /** Lower floor of the attack/defense multiplier in percent, e.g. 80 means x0.8. */
+  /** Lower floor of the attack/defense multiplier in percent, e.g. 30 means x0.3 (original HoMM3). */
   defensePenaltyFloorPercent: number;
-  /** Reserved switch: true = magic resist is a percent reduction (implemented),
-   *  false = a future binary resist (NOT implemented yet). */
-  magicResistIsPercentReduction: boolean;
-  /** Morale penalty multiplier used when isMoralePenalized is true, e.g. 0.9 = -10%. */
-  moralePenaltyMultiplier: number;
+  /**
+   * Chance of the luck effect triggering, in percent, keyed by |luckLevel| ("1".."3").
+   * Luck is a CHANCE, not a smooth multiplier: at level 2 there is only a 25% chance
+   * that luckPositiveMultiplier / luckNegativeMultiplier is applied at all.
+   */
+  luckChanceByLevel: Record<string, number>;
+  /** Damage multiplier when positive luck triggers, e.g. 1.5 means +50%. */
+  luckPositiveMultiplier: number;
+  /** Damage multiplier when negative luck triggers, e.g. 0.75 means -25%. */
+  luckNegativeMultiplier: number;
+  /**
+   * Damage multiplier for a hit that happened THANKS to a morale extra attack
+   * (context.isMoraleBonusAttack). Morale itself is a turn-order system (extra attack
+   * or skipped turn) and does NOT weaken ordinary attacks.
+   */
+  moraleBonusAttackMultiplier: number;
   /** The smallest amount of damage a hit may ever deal, e.g. 1. */
   minimumDamage: number;
 };
 
-/** Fields that must exist and must be finite numbers (6 numbers + 1 boolean = 7 fields in total). */
+/** Fields that must exist and must be finite numbers (8 numbers + 1 object = 9 fields in total). */
 const NUMBER_FIELDS: ReadonlyArray<keyof CombatRules> = [
   'attackAdvantagePercentPerPoint',
   'attackAdvantageCapPercent',
   'defensePenaltyPercentPerPoint',
   'defensePenaltyFloorPercent',
-  'moralePenaltyMultiplier',
+  'luckPositiveMultiplier',
+  'luckNegativeMultiplier',
+  'moraleBonusAttackMultiplier',
   'minimumDamage',
 ];
 
-/** Fields that must exist and must be booleans. */
-const BOOLEAN_FIELDS: ReadonlyArray<keyof CombatRules> = ['magicResistIsPercentReduction'];
+/** Fields that must exist and must be objects of numbers (keyed by |luckLevel|). */
+const OBJECT_FIELDS: ReadonlyArray<keyof CombatRules> = ['luckChanceByLevel'];
+
+/** Luck levels that must be present inside the object field (see CombatUnit.luckLevel). */
+const REQUIRED_LUCK_LEVELS = ['1', '2', '3'];
 
 /** Short, readable path for messages: config/combat-rules.json instead of C:\...\config\... */
 function displayPath(filePath: string): string {
@@ -103,28 +119,48 @@ export function loadCombatRules(filePath: string = DEFAULT_COMBAT_RULES_PATH): C
     }
   }
 
-  for (const field of BOOLEAN_FIELDS) {
+  for (const field of OBJECT_FIELDS) {
     if (!(field in source)) {
       throw new Error(`${shownPath}: отсутствует обязательное поле ${field}`);
     }
 
     const value = source[field];
-    if (typeof value !== 'boolean') {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
       throw new Error(
-        `${shownPath}: поле ${field} должно быть true или false, а получено: ${JSON.stringify(value)}`,
+        `${shownPath}: поле ${field} должно быть объектом с числами, а получено: ${JSON.stringify(value)}`,
       );
+    }
+
+    const levels = value as Record<string, unknown>;
+    for (const level of REQUIRED_LUCK_LEVELS) {
+      if (!(level in levels)) {
+        throw new Error(`${shownPath}: в поле ${field} отсутствует уровень удачи "${level}"`);
+      }
+      if (typeof levels[level] !== 'number' || !Number.isFinite(levels[level])) {
+        throw new Error(
+          `${shownPath}: в поле ${field} значение для уровня "${level}" должно быть числом, а получено: ${JSON.stringify(levels[level])}`,
+        );
+      }
     }
   }
 
   // Explicit pick: unknown fields in the JSON are ignored on purpose, so a typo
   // in the file name cannot silently change the formula.
+  const luckChances = source.luckChanceByLevel as Record<string, unknown>;
+
   return {
     attackAdvantagePercentPerPoint: source.attackAdvantagePercentPerPoint as number,
     attackAdvantageCapPercent: source.attackAdvantageCapPercent as number,
     defensePenaltyPercentPerPoint: source.defensePenaltyPercentPerPoint as number,
     defensePenaltyFloorPercent: source.defensePenaltyFloorPercent as number,
-    magicResistIsPercentReduction: source.magicResistIsPercentReduction as boolean,
-    moralePenaltyMultiplier: source.moralePenaltyMultiplier as number,
+    luckChanceByLevel: {
+      '1': luckChances['1'] as number,
+      '2': luckChances['2'] as number,
+      '3': luckChances['3'] as number,
+    },
+    luckPositiveMultiplier: source.luckPositiveMultiplier as number,
+    luckNegativeMultiplier: source.luckNegativeMultiplier as number,
+    moraleBonusAttackMultiplier: source.moraleBonusAttackMultiplier as number,
     minimumDamage: source.minimumDamage as number,
   };
 }

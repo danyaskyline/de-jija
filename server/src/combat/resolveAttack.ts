@@ -3,25 +3,30 @@
  * PixiJS (docs/architecture.md, "Формулы урона").
  *
  * "Pure" means: the result depends only on the arguments (the balance rules are
- * injected; by default they are the in-memory copy loaded once at server startup
- * — see combatRules.ts). Randomness goes through context.random, so tests are
- * fully deterministic.
+ * injected; by default they are the in-memory copy loaded once at server startup —
+ * see combatRules.ts). Randomness goes through context.random, so tests are fully
+ * deterministic.
  *
  * Fixed order of steps (docs/architecture.md):
- *   1. attacker tags         — magic attack or physical?
- *   2. defender tags         — MagicImmune is a FULL block (unlike magic resist)
- *   3. stack damage roll     — damageMin..damageMax per unit, times stackCount
- *   4. flatDamageBonus       — flat damage, applied BEFORE the multiplier
- *   5. attack/defense factor — coefficients from config/combat-rules.json
- *   6. percentDamageBonus    — applied AFTER the multiplier
- *   7. magicResistPercent    — PARTIAL reduction of magic damage, never a block
- *   8. morale penalty        — rules.moralePenaltyMultiplier when penalized
- *   9. minimum damage        — never below rules.minimumDamage, rounded down
- *  10. retaliation           — may the defender answer?
+ *   1. attacker tags          — is the attack classified as magical?
+ *   2. defender tags          — MagicImmune fully blocks a magical attack
+ *   3. stack damage roll      — damageMin..damageMax per unit, times stackCount
+ *   4. flatDamageBonus        — flat damage, applied BEFORE the multiplier
+ *   5. attack/defense factor  — +heroAttackBonus / -heroDefenseBonus, then config
+ *   6. percentDamageBonus     — applied AFTER the multiplier
+ *   7. luck                   — a CHANCE to trigger, not a smooth multiplier
+ *   8. morale bonus attack    — only when THIS hit is a morale-driven extra attack
+ *   9. minimum damage         — never below rules.minimumDamage, rounded down
+ *  10. apply to the stack HP pool
+ *  11. retaliation flag
  *
- * Everything deliberately not implemented yet is reported in `notes` instead of
- * being silently ignored. The minimum damage is balance data, not code: it lives
- * in config/combat-rules.json (minimumDamage) and is loaded once at startup.
+ * Magic damage is a SIMPLIFIED TEST ABSTRACTION at this stage: the `MagicDamage` tag
+ * only classifies an attack as magical, and `MagicImmune` fully blocks such an attack.
+ * It is NOT a spell system — spells, spell power and magic resistance belong to a
+ * future resolveSpell, which is deliberately out of scope here.
+ *
+ * Everything deliberately not implemented yet is reported in `notes` instead of being
+ * silently ignored. Balance numbers live in config/combat-rules.json, loaded once.
  */
 
 import type { AbilityTag, CombatUnit } from '@de-jija/shared';
@@ -33,15 +38,22 @@ export type AttackContext = {
   isRetaliation?: boolean;
   /** Random source, injectable so tests are deterministic. Defaults to Math.random. */
   random?: () => number;
+  /**
+   * Fixes the luck roll (0..0.99) so the chance-based luck can be tested
+   * deterministically. It does NOT affect the damage roll.
+   */
+  fixedLuckRoll?: number;
 
   /** Flat damage added to the stack roll BEFORE the attack/defense multiplier. */
   flatDamageBonus?: number;
   /** Percent damage applied AFTER the attack/defense multiplier (50 means +50%). */
   percentDamageBonus?: number;
-  /** Partial reduction of the damage of a MAGIC attack, in percent (25 means -25%). */
-  magicResistPercent?: number;
-  /** When true the result is multiplied by rules.moralePenaltyMultiplier. */
-  isMoralePenalized?: boolean;
+  /**
+   * True ONLY when this hit is the result of a morale-driven extra attack.
+   * Morale itself is a turn-order system (extra attack or skipped turn) and does
+   * NOT weaken ordinary attacks, so an ordinary hit has no morale modifier at all.
+   */
+  isMoraleBonusAttack?: boolean;
 
   /**
    * Flat bonus to the ATTACKER's attack for this calculation only (hero items,
@@ -78,11 +90,20 @@ export type DamageBreakdown = {
   afterAttackDefense: number;
   percentBonusApplied: number;
   afterPercentBonus: number;
-  /** Percent of magic resistance actually applied (0 for physical attacks). */
-  magicResistApplied: number;
-  afterMagicResist: number;
-  /** Morale multiplier actually applied (1 when there is no morale penalty). */
-  moraleApplied: number;
+  /** Luck level of the attacker at the moment of the attack (-3..3, 0 = no luck). */
+  luckLevel: number;
+  /** Chance the luck effect had to trigger, in percent (0 when luckLevel is 0). */
+  luckTriggerChancePercent: number;
+  /** True when the luck roll succeeded. */
+  luckTriggered: boolean;
+  /** Luck multiplier actually applied (1 when luck did not trigger). */
+  luckMultiplierApplied: number;
+  afterLuck: number;
+  /** True when this hit happened thanks to a morale extra attack. */
+  moraleBonusAttackApplied: boolean;
+  /** Morale multiplier actually applied (1 for an ordinary attack). */
+  moraleMultiplier: number;
+  afterMoraleBonus: number;
   finalDamage: number;
 };
 
@@ -118,11 +139,19 @@ function rollStackDamage(attacker: CombatUnit, stackCount: number, random: () =>
   return minRoll + Math.floor(random() * spread);
 }
 
+/** Luck level of the attacker, clamped to -3..3 (0 = no luck). */
+function readLuckLevel(attacker: CombatUnit): number {
+  const level = Math.trunc(attacker.luckLevel ?? 0);
+
+  return Math.max(-3, Math.min(3, level));
+}
+
 /**
  * Attack/defense factor, computed from the balance rules (no hardcoded numbers):
  *   attack > defense: 1 + attackAdvantagePercentPerPoint/100 * (attack - defense), capped
  *   attack < defense: max(floor, 1 - defensePenaltyPercentPerPoint/100 * (defense - attack))
  *   equal:            1
+ * The floor is defensePenaltyFloorPercent — 30% (x0.3) in the original HoMM3.
  */
 export function attackDefenseMultiplier(
   attack: number,
@@ -160,9 +189,14 @@ function emptyBreakdown(): DamageBreakdown {
     afterAttackDefense: 0,
     percentBonusApplied: 0,
     afterPercentBonus: 0,
-    magicResistApplied: 0,
-    afterMagicResist: 0,
-    moraleApplied: 1,
+    luckLevel: 0,
+    luckTriggerChancePercent: 0,
+    luckTriggered: false,
+    luckMultiplierApplied: 1,
+    afterLuck: 0,
+    moraleBonusAttackApplied: false,
+    moraleMultiplier: 1,
+    afterMoraleBonus: 0,
     finalDamage: 0,
   };
 }
@@ -180,7 +214,7 @@ function calculateDamage(
   context: AttackContext,
   rules: CombatRules,
   stackCount: number,
-  isMagicAttack: boolean,
+  luckLevel: number,
   random: () => number,
 ): DamagePipeline {
   const notes: string[] = [];
@@ -200,12 +234,6 @@ function calculateDamage(
   const attackDefenseFactor = attackDefenseMultiplier(effectiveAttack, effectiveDefense, rules);
   const afterAttackDefense = afterFlatBonus * attackDefenseFactor;
 
-  if ((context.heroAttackBonus ?? 0) !== 0 || (context.heroDefenseBonus ?? 0) !== 0) {
-    notes.push(
-      `hero bonuses: attack +${context.heroAttackBonus ?? 0} (${attacker.stats.attack} -> ${effectiveAttack}), defense +${context.heroDefenseBonus ?? 0} (${defender.stats.defense} -> ${effectiveDefense})`,
-    );
-  }
-
   const advantageCap = rules.attackAdvantageCapPercent / 100;
   const penaltyFloor = rules.defensePenaltyFloorPercent / 100;
 
@@ -224,42 +252,51 @@ function calculateDamage(
   const percentBonusApplied = context.percentDamageBonus ?? 0;
   const afterPercentBonus = afterAttackDefense * (1 + percentBonusApplied / 100);
 
-  // Step 7 — magic resist: a PARTIAL reduction of magic damage (never a block).
-  // MagicImmune (step 2) stays a separate, full block.
-  const requestedMagicResist = context.magicResistPercent ?? 0;
-  const magicResistApplied = isMagicAttack ? Math.min(100, Math.max(0, requestedMagicResist)) : 0;
-  const afterMagicResist = afterPercentBonus * (1 - magicResistApplied / 100);
+  // Step 7 — luck is a CHANCE to trigger, not a smooth multiplier. The chance comes
+  // from luckChanceByLevel by |luckLevel|; only on a trigger the matching multiplier
+  // (positive or negative) is applied to the damage accumulated so far.
+  const luckTriggerChancePercent =
+    luckLevel === 0 ? 0 : (rules.luckChanceByLevel[String(Math.abs(luckLevel))] ?? 0);
+  let luckTriggered = false;
+  let luckMultiplierApplied = 1;
 
-  if (magicResistApplied > 0) {
-    notes.push(
-      `magic resist reduced magic damage by ${magicResistApplied}% (partial reduction, not a block)`,
-    );
-  }
-  if (!isMagicAttack && requestedMagicResist > 0) {
-    notes.push(`magicResistPercent=${requestedMagicResist} ignored: the attack is physical`);
-  }
-  if (rules.magicResistIsPercentReduction === false) {
-    notes.push(
-      'magicResistIsPercentReduction=false is not implemented yet: the percent reduction branch is used',
-    );
+  if (luckLevel === 0) {
+    notes.push('no luck: luckLevel is 0');
+  } else {
+    const roll = context.fixedLuckRoll ?? random();
+    luckTriggered = roll < luckTriggerChancePercent / 100;
+
+    if (luckTriggered) {
+      luckMultiplierApplied =
+        luckLevel > 0 ? rules.luckPositiveMultiplier : rules.luckNegativeMultiplier;
+      notes.push(
+        `luck ${luckLevel > 0 ? 'bonus' : 'malus'} triggered (chance ${luckTriggerChancePercent}%, roll ${roll.toFixed(2)}): x${luckMultiplierApplied}`,
+      );
+    } else {
+      notes.push(`luck did not trigger (chance ${luckTriggerChancePercent}%, roll ${roll.toFixed(2)})`);
+    }
   }
 
-  // Step 8 — morale penalty (a single multiplier taken from the config).
-  const moraleApplied = context.isMoralePenalized === true ? rules.moralePenaltyMultiplier : 1;
-  const afterMorale = afterMagicResist * moraleApplied;
+  const afterLuck = afterPercentBonus * luckMultiplierApplied;
 
-  if (moraleApplied !== 1) {
+  // Step 8 — morale. ONLY a hit that IS a morale extra attack is weakened; an ordinary
+  // attack has no morale modifier at all (morale is a turn-order system, not a damage buff).
+  const moraleBonusAttackApplied = context.isMoraleBonusAttack === true;
+  const moraleMultiplier = moraleBonusAttackApplied ? rules.moraleBonusAttackMultiplier : 1;
+  const afterMoraleBonus = afterLuck * moraleMultiplier;
+
+  if (moraleBonusAttackApplied) {
     notes.push(
-      `morale penalty applied: x${moraleApplied} (moralePenaltyMultiplier=${rules.moralePenaltyMultiplier})`,
+      `morale extra attack: damage x${moraleMultiplier} (moraleBonusAttackMultiplier=${rules.moraleBonusAttackMultiplier})`,
     );
   }
 
   // Step 9 — round down, but never below the minimum from the balance config.
-  const finalDamage = Math.max(rules.minimumDamage, Math.floor(afterMorale));
+  const finalDamage = Math.max(rules.minimumDamage, Math.floor(afterMoraleBonus));
 
-  if (afterMorale < rules.minimumDamage) {
+  if (afterMoraleBonus < rules.minimumDamage) {
     notes.push(
-      `damage clamped up to minimumDamage=${rules.minimumDamage} (computed ${afterMorale.toFixed(2)})`,
+      `damage clamped up to minimumDamage=${rules.minimumDamage} (computed ${afterMoraleBonus.toFixed(2)})`,
     );
   }
 
@@ -274,9 +311,14 @@ function calculateDamage(
       afterAttackDefense,
       percentBonusApplied,
       afterPercentBonus,
-      magicResistApplied,
-      afterMagicResist,
-      moraleApplied,
+      luckLevel,
+      luckTriggerChancePercent,
+      luckTriggered,
+      luckMultiplierApplied,
+      afterLuck,
+      moraleBonusAttackApplied,
+      moraleMultiplier,
+      afterMoraleBonus,
       finalDamage,
     },
     notes,
@@ -284,9 +326,9 @@ function calculateDamage(
 }
 
 /**
- * Abilities and masteries that this pure function deliberately does not
- * implement yet. They are reported in `notes`, so a placeholder can never be
- * mistaken for an effect that actually happened.
+ * Abilities and masteries that this pure function deliberately does not implement yet.
+ * They are reported in `notes`, so a placeholder can never be mistaken for an effect
+ * that actually happened.
  */
 function pushNotImplementedNotes(
   attacker: CombatUnit,
@@ -325,33 +367,25 @@ export function resolveAttack(
   const notes: string[] = [];
   const random = context.random ?? Math.random;
   const stackCount = Math.max(1, Math.trunc(attacker.stackCount ?? 1));
+  const luckLevel = readLuckLevel(attacker);
 
-  // Step 1 (attacker tags): there is no damage-type system yet, so MagicDamage
-  // on the attacker means a magic attack, otherwise a physical one.
+  // Step 1 (attacker tags): there is no spell system here — MagicDamage only classifies
+  // the attack as magical so that MagicImmune (step 2) has something to block.
   const isMagicAttack = hasTag(attacker, 'MagicDamage');
-  notes.push(isMagicAttack ? 'attack type: magic' : 'attack type: physical');
+  notes.push(isMagicAttack ? 'attack type: magical' : 'attack type: physical');
   notes.push(`stack size: ${stackCount}`);
 
-  // Step 2 (defender tags): MagicImmune fully blocks incoming MAGIC. It is not
-  // the same thing as magicResistPercent (a partial reduction any unit may have)
-  // and it never protects the immune unit's own attacks or retaliations.
+  // Step 2 (defender tags): MagicImmune fully blocks an incoming MAGICAL attack. It never
+  // protects the immune unit's own attacks or its retaliations.
   const blockedByImmunity = hasTag(defender, 'MagicImmune') && isMagicAttack;
 
   let pipeline: DamagePipeline = { breakdown: emptyBreakdown(), notes: [] };
 
   if (blockedByImmunity) {
-    notes.push(`MagicImmune on ${defender.name}: magic attack fully blocked, damage 0`);
+    notes.push(`MagicImmune on ${defender.name}: magical attack fully blocked, damage 0`);
   } else {
     // Steps 3-9.
-    pipeline = calculateDamage(
-      attacker,
-      defender,
-      context,
-      rules,
-      stackCount,
-      isMagicAttack,
-      random,
-    );
+    pipeline = calculateDamage(attacker, defender, context, rules, stackCount, luckLevel, random);
   }
 
   notes.push(...pipeline.notes);
@@ -374,11 +408,14 @@ export function resolveAttack(
     );
   }
 
-  // Step 11 (retaliation), one uniform rule for every attack:
-  //   - the attacker must not carry NoRetaliation;
-  //   - the defender must still be alive — checked through defenderDefeated, so a
-  //     stack reduced to 0 HP can never hit back;
-  //   - this attack must not itself be a retaliation (no counter-to-the-counter).
+  // Step 11 (retaliation) — a retaliation is a FULL re-invocation of resolveAttack done by
+  // the caller (roles swapped, isRetaliation: true): it goes through the whole formula with
+  // all modifiers, including the luck of the unit that answers. There is deliberately NO
+  // global "a retaliation is weaker" coefficient anywhere.
+  //
+  // TODO (known future case, NOT implemented): in the original, a ranged unit forced into
+  // melee answers with a WEAKENED melee attack instead of its normal damage. That will be a
+  // separate ability tag (e.g. WeakMeleeRetaliation) later — see docs/architecture.md.
   const retaliationTriggered =
     !hasTag(attacker, 'NoRetaliation') && !defenderDefeated && context.isRetaliation !== true;
 

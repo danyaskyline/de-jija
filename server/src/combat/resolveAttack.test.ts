@@ -2,20 +2,21 @@
  * Unit tests for resolveAttack — the pure combat resolution function.
  *
  * docs/architecture.md requires exactly this: the damage formula must be
- * "покрыта юнит-тестами на конкретных парах юнитов". No map, no hex field and
- * no PixiJS is involved anywhere in this file.
+ * "покрыта юнит-тестами на конкретных парах юнитов". No map, no hex field and no
+ * PixiJS is involved anywhere in this file.
  *
- * The real config/combat-rules.json is loaded once in beforeAll, so these tests
- * also prove that the balance file parses and validates. Damage is deterministic
- * because every test injects a fixed random source:
+ * The real config/combat-rules.json is loaded once in beforeAll, so these tests also
+ * prove that the balance file parses and validates. Damage is deterministic because
+ * every test injects a fixed random source:
  *   minRoll (0)     -> the smallest roll (damageMin)
  *   maxRoll (0.999) -> the largest roll  (damageMax)
  *
- * NOTE for the author: the expected numbers below are the arithmetic for the
- * CURRENT values in config/combat-rules.json (+5% per attack point, 400% cap,
- * -2.5% per defense point, 80% floor, x0.9 morale). If the balance file is
- * tuned, some numbers here will move with it — that is expected. Test 14 proves
- * that the coefficients really come from the rules object and not from the code.
+ * NOTE for the author: the expected numbers below are the arithmetic for the CURRENT
+ * values in config/combat-rules.json (+5% per attack point, 400% cap, -2.5% per
+ * defense point, 30% floor = the original HoMM3, luck 10/25/40%, x1.5 and x0.75,
+ * x0.8 morale extra attack, minimum damage 1). If the balance file is tuned, some
+ * numbers here will move with it — that is expected. Test 14 proves that the
+ * coefficients really come from the rules object and not from the code.
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -23,7 +24,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules, type CombatRules } from './combatRules';
-import { attackDefenseMultiplier, resolveAttack } from './resolveAttack';
+import { resolveAttack } from './resolveAttack';
 import { antimage, blackDragon, goblin, mage, swordsman } from './testFixtures';
 
 /** Smallest possible damage roll (damageMin). */
@@ -44,6 +45,11 @@ function withStats(unit: CombatUnit, partial: Partial<CombatUnit['stats']>): Com
   return { ...unit, stats: { ...unit.stats, ...partial } };
 }
 
+/** Copy of a unit with a changed luck level. */
+function withLuck(unit: CombatUnit, luckLevel: number): CombatUnit {
+  return { ...unit, luckLevel };
+}
+
 describe('resolveAttack — pure combat resolution', () => {
   it('1. antimage attacks the dragon: physical hit lands, no retaliation (NoRetaliation)', () => {
     const result = resolveAttack(antimage, blackDragon, { random: minRoll });
@@ -54,7 +60,8 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.breakdown.stackRoll).toBe(40);
     expect(result.damageDealt).toBe(40);
     expect(result.defenderHpAfter).toBe(blackDragon.stats.hp - 40);
-    expect(result.defenderDefeated).toBe(false);
+    expect(result.stackAliveCount).toBe(1);
+    expect(result.frontUnitHp).toBe(blackDragon.stats.hp - 40);
     // The antimage carries NoRetaliation, so the dragon never hits back.
     expect(result.retaliationTriggered).toBe(false);
 
@@ -64,26 +71,28 @@ describe('resolveAttack — pure combat resolution', () => {
     );
   });
 
-  it('2. mage (MagicDamage) attacks the dragon: full block by MagicImmune, breakdown stays at zero', () => {
+  it('2. mage (MagicDamage) attacks the dragon: MagicImmune blocks it completely', () => {
     const result = resolveAttack(mage, blackDragon, { random: minRoll });
 
     expect(result.blockedByImmunity).toBe(true);
     expect(result.damageDealt).toBe(0);
     expect(result.defenderHpAfter).toBe(blackDragon.currentHp);
-    expect(result.notes).toContain('MagicImmune on Чёрный дракон: magic attack fully blocked, damage 0');
+    expect(result.notes).toContain(
+      'MagicImmune on Чёрный дракон: magical attack fully blocked, damage 0',
+    );
 
-    // Nothing was rolled, so every step is zero (moraleApplied is a neutral x1).
+    // Nothing was rolled, so every step is zero (neutral multipliers stay 1).
     expect(result.breakdown.stackRoll).toBe(0);
     expect(result.breakdown.attackDefenseMultiplier).toBe(0);
+    expect(result.breakdown.moraleMultiplier).toBe(1);
     expect(result.breakdown.finalDamage).toBe(0);
-    expect(result.breakdown.moraleApplied).toBe(1);
 
     // The retaliation rule is applied uniformly to every attack, blocked or not
     // (docs/decisions.md, 011).
     expect(result.retaliationTriggered).toBe(true);
   });
 
-  it('2b. even the largest magic roll is blocked, so immunity cannot be bypassed by luck', () => {
+  it('2b. even the largest roll is blocked, so immunity cannot be bypassed by luck', () => {
     const result = resolveAttack(mage, blackDragon, { random: maxRoll });
 
     expect(result.damageDealt).toBe(0);
@@ -93,7 +102,7 @@ describe('resolveAttack — pure combat resolution', () => {
   it('3. dragon attacks the antimage: attack advantage x1.35 applies', () => {
     const result = resolveAttack(blackDragon, antimage, { random: minRoll });
 
-    // attack 15 vs defense 8 -> 1 + 5%/100 * 7 = 1.35; roll 30 -> 40.5 -> floor 40
+    // attack 15 vs defense 8 -> 1 + 0.05*7 = 1.35; roll 30 -> 40.5 -> floor 40
     expect(result.blockedByImmunity).toBe(false);
     expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1.35);
     expect(result.breakdown.afterAttackDefense).toBeCloseTo(40.5);
@@ -101,15 +110,14 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.retaliationTriggered).toBe(true);
   });
 
-  it('3b. a retaliation against the dragon is not weakened by the dragon own MagicImmune', () => {
-    // The antimage answers the dragon: a physical attack, so the dragon's
-    // MagicImmune does not reduce it — it never blocks physical damage.
+  it('3b. a retaliation is a full attack: no special weakening, and no counter-counter', () => {
+    // The antimage answers the dragon. The call goes through the whole formula again —
+    // there is no global "retaliation is weaker" coefficient.
     const result = resolveAttack(antimage, blackDragon, { isRetaliation: true, random: minRoll });
 
     expect(result.blockedByImmunity).toBe(false);
-    expect(result.damageDealt).toBe(40);
-    // isRetaliation: an answer to an answer must not happen.
-    expect(result.retaliationTriggered).toBe(false);
+    expect(result.damageDealt).toBe(40); // exactly the same as a normal attack
+    expect(result.retaliationTriggered).toBe(false); // isRetaliation: no counter-counter
   });
 
   it('4. plain exchange with no special tags: damage is dealt and retaliation is triggered', () => {
@@ -146,15 +154,18 @@ describe('resolveAttack — pure combat resolution', () => {
   });
 
   it('7. damage never falls below MIN_DAMAGE, even with the weakest possible attacker', () => {
-    // attack 1 vs defense 12 -> multiplier at its floor (0.8); roll 1 -> 0.8 -> floor 0 -> clamp to 1
+    // attack 1 vs defense 12 -> 1 - 0.025*11 = 0.725 (the 30% floor is NOT reached);
+    // roll 1 -> 0.725 -> floor 0 -> clamped up to the minimum.
     const weakling = withStats(swordsman, { attack: 1, damageMin: 1, damageMax: 1 });
     const result = resolveAttack(weakling, blackDragon, { random: minRoll });
 
-    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(0.8);
+    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(0.725);
     expect(result.damageDealt).toBe(MIN_DAMAGE);
     expect(
       result.notes.some((note) => note.startsWith('damage clamped up to minimumDamage')),
     ).toBe(true);
+    // 0.725 is above the floor, so the "floored" note must NOT appear here.
+    expect(result.notes.some((note) => note.includes('defense penalty is floored'))).toBe(false);
   });
 
   it('8. flatDamageBonus is applied BEFORE the multiplier and percentDamageBonus AFTER it', () => {
@@ -186,61 +197,90 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.notes.some((note) => note.includes('attack advantage is capped at x4'))).toBe(true);
   });
 
-  it('10. a huge defense advantage stops at the floor (defensePenaltyFloorPercent = 80 -> x0.8)', () => {
+  it('10. a huge defense advantage stops at the 30% floor (the original HoMM3 value)', () => {
     const weakAttacker = withStats(goblin, { attack: 1 });
     const veryArmoredDefender = withStats(blackDragon, { defense: 500 });
     const result = resolveAttack(weakAttacker, veryArmoredDefender, { random: minRoll });
 
-    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(0.8); // 80 / 100
-    expect(result.damageDealt).toBe(6); // roll 8 * 0.8 = 6.4 -> floor 6
-    expect(result.notes.some((note) => note.includes('defense penalty is floored at x0.8'))).toBe(true);
+    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(0.3); // 30 / 100
+    expect(result.damageDealt).toBe(2); // roll 8 * 0.3 = 2.4 -> floor 2
+    expect(result.notes.some((note) => note.includes('defense penalty is floored at x0.3'))).toBe(
+      true,
+    );
   });
 
-  it('11. magicResistPercent reduces magic damage partially — it is NOT a block', () => {
-    const result = resolveAttack(mage, swordsman, { random: minRoll, magicResistPercent: 25 });
+  it('11. luck is a CHANCE: luckLevel 2 with a roll inside the 25% window triggers x1.5', () => {
+    const lucky = withLuck(swordsman, 2);
+    const result = resolveAttack(lucky, goblin, { random: minRoll, fixedLuckRoll: 0.1 });
 
-    // attack 10 vs defense 6 -> 1.2; roll 20 -> 24 -> -25% -> 18
-    expect(result.blockedByImmunity).toBe(false);
-    expect(result.breakdown.magicResistApplied).toBe(25);
-    expect(result.breakdown.afterMagicResist).toBeCloseTo(18);
-    expect(result.damageDealt).toBe(18);
-    expect(
-      result.notes.some((note) => note.includes('magic resist reduced magic damage by 25%')),
-    ).toBe(true);
-
-    // Contrast with MagicImmune, which is a full block (test 2).
-    const immuneTarget = resolveAttack(mage, blackDragon, { random: minRoll, magicResistPercent: 25 });
-    expect(immuneTarget.blockedByImmunity).toBe(true);
-    expect(immuneTarget.damageDealt).toBe(0);
+    expect(result.breakdown.luckLevel).toBe(2);
+    expect(result.breakdown.luckTriggerChancePercent).toBe(25);
+    expect(result.breakdown.luckTriggered).toBe(true);
+    expect(result.breakdown.luckMultiplierApplied).toBe(1.5);
+    expect(result.breakdown.afterLuck).toBeCloseTo(17.25); // 11.5 * 1.5
+    expect(result.damageDealt).toBe(17);
+    expect(result.notes.some((note) => note.includes('luck bonus triggered'))).toBe(true);
   });
 
-  it('11b. magicResistPercent is ignored for a physical attack', () => {
-    const result = resolveAttack(swordsman, goblin, { random: minRoll, magicResistPercent: 50 });
+  it('11b. the same luckLevel does NOT trigger when the roll is outside the chance', () => {
+    const unlucky = withLuck(swordsman, -3);
+    const result = resolveAttack(unlucky, goblin, { random: minRoll, fixedLuckRoll: 0.9 });
 
-    expect(result.breakdown.magicResistApplied).toBe(0);
-    expect(result.damageDealt).toBe(11); // same as without the parameter
-    expect(result.notes.some((note) => note.includes('ignored: the attack is physical'))).toBe(true);
+    expect(result.breakdown.luckTriggerChancePercent).toBe(40);
+    expect(result.breakdown.luckTriggered).toBe(false);
+    expect(result.breakdown.luckMultiplierApplied).toBe(1);
+    expect(result.damageDealt).toBe(11);
+    expect(result.notes.some((note) => note.includes('luck did not trigger'))).toBe(true);
   });
 
-  it('11c. even 100% magic resist is a reduction, not a block', () => {
-    const result = resolveAttack(mage, swordsman, { random: minRoll, magicResistPercent: 100 });
+  it('11c. negative luck that triggers applies x0.75', () => {
+    const unlucky = withLuck(swordsman, -2);
+    const result = resolveAttack(unlucky, goblin, { random: minRoll, fixedLuckRoll: 0.2 }); // 25%
 
-    expect(result.blockedByImmunity).toBe(false); // still not "blocked"
-    expect(result.breakdown.afterMagicResist).toBe(0);
-    expect(result.damageDealt).toBe(MIN_DAMAGE); // clamped, never exactly 0
+    expect(result.breakdown.luckTriggered).toBe(true);
+    expect(result.breakdown.luckMultiplierApplied).toBe(0.75);
+    expect(result.damageDealt).toBe(8); // 11.5 * 0.75 = 8.625 -> floor 8
+    expect(result.notes.some((note) => note.includes('luck malus triggered'))).toBe(true);
   });
 
-  it('12. a morale penalty multiplies the result by moralePenaltyMultiplier', () => {
-    const withoutPenalty = resolveAttack(swordsman, goblin, { random: minRoll });
-    const penalized = resolveAttack(swordsman, goblin, {
+  it('11d. luckLevel 0 never triggers, whatever the roll is', () => {
+    const result = resolveAttack(swordsman, goblin, { random: minRoll, fixedLuckRoll: 0 });
+
+    expect(result.breakdown.luckLevel).toBe(0);
+    expect(result.breakdown.luckTriggerChancePercent).toBe(0);
+    expect(result.breakdown.luckTriggered).toBe(false);
+    expect(result.breakdown.luckMultiplierApplied).toBe(1);
+    expect(result.damageDealt).toBe(11);
+    expect(result.notes).toContain('no luck: luckLevel is 0');
+  });
+
+  it('11e. without fixedLuckRoll the luck roll uses the same random source as the damage roll', () => {
+    const lucky = withLuck(swordsman, 3);
+    const result = resolveAttack(lucky, goblin, { random: () => 0.1 });
+
+    // damage roll: 10 + floor(0.1 * 5) = 10; luck roll 0.1 < 0.4 -> triggers
+    expect(result.breakdown.stackRoll).toBe(10);
+    expect(result.breakdown.luckTriggered).toBe(true);
+    expect(result.damageDealt).toBe(17); // 10 * 1.15 = 11.5, * 1.5 = 17.25 -> 17
+  });
+
+  it('12. morale only touches a hit that IS a morale extra attack', () => {
+    const ordinary = resolveAttack(swordsman, goblin, { random: minRoll });
+    const moraleHit = resolveAttack(swordsman, goblin, {
       random: minRoll,
-      isMoralePenalized: true,
+      isMoraleBonusAttack: true,
     });
 
-    expect(penalized.breakdown.moraleApplied).toBe(0.9); // current config value
-    expect(penalized.damageDealt).toBe(10); // 11.5 * 0.9 = 10.35 -> floor 10
-    expect(penalized.damageDealt).toBeLessThan(withoutPenalty.damageDealt);
-    expect(penalized.notes.some((note) => note.includes('morale penalty applied: x0.9'))).toBe(true);
+    // An ordinary attack has no morale modifier at all (morale is a turn-order system).
+    expect(ordinary.breakdown.moraleBonusAttackApplied).toBe(false);
+    expect(ordinary.breakdown.moraleMultiplier).toBe(1);
+    expect(ordinary.damageDealt).toBe(11);
+
+    expect(moraleHit.breakdown.moraleBonusAttackApplied).toBe(true);
+    expect(moraleHit.breakdown.moraleMultiplier).toBe(0.8);
+    expect(moraleHit.breakdown.afterMoraleBonus).toBeCloseTo(9.2); // 11.5 * 0.8
+    expect(moraleHit.damageDealt).toBe(9);
+    expect(moraleHit.notes.some((note) => note.includes('morale extra attack'))).toBe(true);
   });
 
   it('13. breakdown is complete and logically consistent for a fully modified attack', () => {
@@ -248,8 +288,7 @@ describe('resolveAttack — pure combat resolution', () => {
       random: minRoll,
       flatDamageBonus: 2,
       percentDamageBonus: 10,
-      magicResistPercent: 20,
-      isMoralePenalized: true,
+      isMoraleBonusAttack: true,
     });
     const { breakdown } = result;
 
@@ -257,21 +296,31 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(Object.keys(breakdown).sort()).toEqual([
       'afterAttackDefense',
       'afterFlatBonus',
-      'afterMagicResist',
+      'afterLuck',
+      'afterMoraleBonus',
       'afterPercentBonus',
       'attackDefenseMultiplier',
       'effectiveAttack',
       'effectiveDefense',
       'finalDamage',
       'flatBonusApplied',
-      'magicResistApplied',
-      'moraleApplied',
+      'luckLevel',
+      'luckMultiplierApplied',
+      'luckTriggerChancePercent',
+      'luckTriggered',
+      'moraleBonusAttackApplied',
+      'moraleMultiplier',
       'percentBonusApplied',
       'stackRoll',
     ]);
     for (const [name, value] of Object.entries(breakdown)) {
-      expect(Number.isFinite(value), `${name} is not a finite number`).toBe(true);
+      if (typeof value === 'number') {
+        expect(Number.isFinite(value), `${name} is not a finite number`).toBe(true);
+      }
     }
+    // The two flags in the breakdown must really be booleans.
+    expect(typeof breakdown.luckTriggered).toBe('boolean');
+    expect(typeof breakdown.moraleBonusAttackApplied).toBe('boolean');
 
     // Each step must follow from the previous one.
     expect(breakdown.stackRoll).toBe(20);
@@ -282,12 +331,15 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(breakdown.afterPercentBonus).toBeCloseTo(
       breakdown.afterAttackDefense * (1 + breakdown.percentBonusApplied / 100),
     ); // 29.04
-    expect(breakdown.afterMagicResist).toBeCloseTo(
-      breakdown.afterPercentBonus * (1 - breakdown.magicResistApplied / 100),
-    ); // 23.232
+    expect(breakdown.afterLuck).toBeCloseTo(
+      breakdown.afterPercentBonus * breakdown.luckMultiplierApplied,
+    ); // luckLevel 0 -> x1
+    expect(breakdown.afterMoraleBonus).toBeCloseTo(
+      breakdown.afterLuck * breakdown.moraleMultiplier,
+    ); // 29.04 * 0.8 = 23.232
     expect(breakdown.finalDamage).toBe(
-      Math.max(MIN_DAMAGE, Math.floor(breakdown.afterMagicResist * breakdown.moraleApplied)),
-    ); // 20.9088 -> 20
+      Math.max(MIN_DAMAGE, Math.floor(breakdown.afterMoraleBonus)),
+    ); // 23.232 -> 23
     expect(result.damageDealt).toBe(breakdown.finalDamage);
   });
 
@@ -298,7 +350,7 @@ describe('resolveAttack — pure combat resolution', () => {
       attackAdvantageCapPercent: 200,
       defensePenaltyPercentPerPoint: 5,
       defensePenaltyFloorPercent: 50,
-      moralePenaltyMultiplier: 0.5,
+      moraleBonusAttackMultiplier: 0.5,
     };
 
     // attack 15 vs defense 8 -> 1 + 0.10*7 = 1.7 (with the default rules it would be 1.35)
@@ -306,20 +358,22 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(stronger.breakdown.attackDefenseMultiplier).toBeCloseTo(1.7);
     expect(stronger.damageDealt).toBe(51); // 30 * 1.7
 
-    // Custom floor of 50% instead of the default 80%.
+    // Custom floor of 50% instead of the default 30%.
     const weakling = withStats(swordsman, { attack: 1 });
     const floored = resolveAttack(weakling, blackDragon, { random: minRoll }, customRules);
     expect(floored.breakdown.attackDefenseMultiplier).toBeCloseTo(0.5);
 
-    // Custom morale multiplier of 0.5 instead of the default 0.9.
-    const penalized = resolveAttack(
+    // Custom morale multiplier for a morale extra attack.
+    const moraleHit = resolveAttack(
       swordsman,
       goblin,
-      { random: minRoll, isMoralePenalized: true },
+      { random: minRoll, isMoraleBonusAttack: true },
       customRules,
     );
-    expect(penalized.breakdown.moraleApplied).toBe(0.5);
-    expect(penalized.damageDealt).toBe(6); // roll 10 * 1.3 (custom +10%/point) = 13, * 0.5 = 6.5 -> floor 6
+    expect(moraleHit.breakdown.moraleMultiplier).toBe(0.5);
+    // With the custom +10% per point the multiplier is 1.3, not the default 1.15:
+    // roll 10 * 1.3 = 13, then * 0.5 = 6.5 -> floor 6
+    expect(moraleHit.damageDealt).toBe(6);
   });
 
   it('15. the four mastery/armor placeholders are reported but never applied', () => {
@@ -337,9 +391,15 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(attackWithPlaceholders.breakdown).toEqual(plainAttack.breakdown);
 
     // ...but they cannot be missed either.
-    expect(attackWithPlaceholders.notes.filter((note) => note.includes('is a placeholder')).length).toBe(4);
-    expect(attackWithPlaceholders.notes.some((note) => note.includes('meleeOffenseBonusPercent=10'))).toBe(true);
-    expect(attackWithPlaceholders.notes.some((note) => note.includes('defensiveArmorReductionPercent=15'))).toBe(true);
+    expect(
+      attackWithPlaceholders.notes.filter((note) => note.includes('is a placeholder')).length,
+    ).toBe(4);
+    expect(
+      attackWithPlaceholders.notes.some((note) => note.includes('meleeOffenseBonusPercent=10')),
+    ).toBe(true);
+    expect(
+      attackWithPlaceholders.notes.some((note) => note.includes('defensiveArmorReductionPercent=15')),
+    ).toBe(true);
   });
 
   it('16. declared-but-unimplemented abilities are reported instead of silently ignored', () => {
@@ -360,6 +420,8 @@ describe('resolveAttack — pure combat resolution', () => {
     const result = resolveAttack(swordsman, weakenedGoblin, { random: minRoll }); // 11 damage vs 5 hp
 
     expect(result.defenderHpAfter).toBe(0); // never negative
+    expect(result.stackAliveCount).toBe(0);
+    expect(result.frontUnitHp).toBe(0);
     expect(result.defenderDefeated).toBe(true);
     expect(result.retaliationTriggered).toBe(false);
   });
@@ -367,14 +429,16 @@ describe('resolveAttack — pure combat resolution', () => {
   it('18b. overkill damage far above the total HP stays at 0 and still stops the retaliation', () => {
     // 5 dragons (roll 30 * 5 = 150) vs a goblin: attack 15 vs defense 3 -> x1.6 -> 240 damage
     // against 50 HP. The raw difference is -190 — that is the value that used to leak out.
-    const dragonStack: CombatUnit = { ...blackDragon, stackCount: 5 };
+    const dragonStack: CombatUnit = { ...blackDragon, stackCount: 5, currentHp: 1000 };
     const result = resolveAttack(dragonStack, goblin, { random: minRoll });
 
     expect(result.breakdown.stackRoll).toBe(150);
     expect(result.damageDealt).toBe(240);
     expect(result.defenderHpAfter).toBe(0); // clamped, not -190
+    expect(result.stackAliveCount).toBe(0);
+    expect(result.frontUnitHp).toBe(0);
     expect(result.defenderDefeated).toBe(true);
-    // A destroyed stack never hits back — decided by the flag, not by the raw number.
+    // The dragon has no NoRetaliation, so only defenderDefeated stops the retaliation.
     expect(result.retaliationTriggered).toBe(false);
     expect(result.notes.some((note) => note.includes('the stack is destroyed'))).toBe(true);
   });
@@ -464,6 +528,16 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1 - 0.025 * 7); // 0.825
     expect(goblin.stats.defense).toBe(3); // not mutated
   });
+
+  it('25. luck applies to a retaliation too (the answering unit has its own luck)', () => {
+    // The dragon answers: it carries the luck now, so a triggered malus/bonus is applied
+    // through the whole formula — a retaliation is a full re-invocation.
+    const luckyDragon = withLuck(blackDragon, 2);
+    const result = resolveAttack(luckyDragon, antimage, { isRetaliation: true, random: minRoll, fixedLuckRoll: 0.1 });
+
+    expect(result.breakdown.luckLevel).toBe(2);
+    expect(result.breakdown.luckTriggered).toBe(true);
+    // roll 30 -> 30 * 1.35 = 40.5, then * 1.5 = 60.75 -> floor 60
+    expect(result.damageDealt).toBe(60);
+  });
 });
-
-

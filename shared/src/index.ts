@@ -78,6 +78,12 @@ export type CombatUnit = {
    */
   currentHp: number;
   /**
+   * Optional luck level of the unit at the moment of the attack, from -3 to 3.
+   * 0 (default) means no luck. Luck is a CHANCE to trigger an effect, not a smooth
+   * multiplier — see rules.luckChanceByLevel (docs/architecture.md, "Формулы урона").
+   */
+  luckLevel?: number;
+  /**
    * Number of units in this stack. The damage roll is per unit
    * (damageMin..damageMax), so the stack roll is multiplied by this value.
    * Optional — omitted means a stack of 1.

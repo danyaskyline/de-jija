@@ -35,9 +35,11 @@ const validRules = {
   attackAdvantagePercentPerPoint: 5,
   attackAdvantageCapPercent: 400,
   defensePenaltyPercentPerPoint: 2.5,
-  defensePenaltyFloorPercent: 80,
-  magicResistIsPercentReduction: true,
-  moralePenaltyMultiplier: 0.9,
+  defensePenaltyFloorPercent: 30,
+  luckChanceByLevel: { '1': 10, '2': 25, '3': 40 },
+  luckPositiveMultiplier: 1.5,
+  luckNegativeMultiplier: 0.75,
+  moraleBonusAttackMultiplier: 0.8,
   minimumDamage: 1,
 };
 
@@ -61,9 +63,11 @@ describe('combat rules loader', () => {
     expect(rules.attackAdvantagePercentPerPoint).toBe(5);
     expect(rules.attackAdvantageCapPercent).toBe(400);
     expect(rules.defensePenaltyPercentPerPoint).toBe(2.5);
-    expect(rules.defensePenaltyFloorPercent).toBe(80);
-    expect(rules.magicResistIsPercentReduction).toBe(true);
-    expect(rules.moralePenaltyMultiplier).toBe(0.9);
+    expect(rules.defensePenaltyFloorPercent).toBe(30); // the original HoMM3 value
+    expect(rules.luckChanceByLevel).toEqual({ '1': 10, '2': 25, '3': 40 });
+    expect(rules.luckPositiveMultiplier).toBe(1.5);
+    expect(rules.luckNegativeMultiplier).toBe(0.75);
+    expect(rules.moraleBonusAttackMultiplier).toBe(0.8);
     expect(rules.minimumDamage).toBe(1);
     expect(DEFAULT_COMBAT_RULES_PATH.endsWith(path.join('config', 'combat-rules.json'))).toBe(true);
   });
@@ -102,25 +106,36 @@ describe('combat rules loader', () => {
     );
   });
 
-  it('reports a missing required boolean field by name', () => {
+  it('reports a missing luck level inside luckChanceByLevel', () => {
     const filePath = writeRulesFile(
-      'missing-boolean.json',
-      JSON.stringify(rulesWithout('magicResistIsPercentReduction')),
+      'missing-luck-level.json',
+      JSON.stringify({ ...validRules, luckChanceByLevel: { '1': 10, '2': 25 } }),
     );
 
     expect(() => loadCombatRules(filePath)).toThrowError(
-      /отсутствует обязательное поле magicResistIsPercentReduction/,
+      /в поле luckChanceByLevel отсутствует уровень удачи "3"/,
     );
   });
 
-  it('reports a boolean field that is not a boolean', () => {
+  it('reports a luck chance that is not a number', () => {
     const filePath = writeRulesFile(
-      'bad-boolean.json',
-      JSON.stringify({ ...validRules, magicResistIsPercentReduction: 'yes' }),
+      'bad-luck-chance.json',
+      JSON.stringify({ ...validRules, luckChanceByLevel: { '1': 'ten', '2': 25, '3': 40 } }),
     );
 
     expect(() => loadCombatRules(filePath)).toThrowError(
-      /поле magicResistIsPercentReduction должно быть true или false/,
+      /значение для уровня "1" должно быть числом/,
+    );
+  });
+
+  it('reports a field that must be an object of numbers but is not', () => {
+    const filePath = writeRulesFile(
+      'bad-luck-object.json',
+      JSON.stringify({ ...validRules, luckChanceByLevel: 25 }),
+    );
+
+    expect(() => loadCombatRules(filePath)).toThrowError(
+      /поле luckChanceByLevel должно быть объектом с числами/,
     );
   });
 
