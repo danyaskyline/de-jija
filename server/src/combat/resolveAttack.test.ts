@@ -24,7 +24,7 @@ import type { CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules, type CombatRules } from './combatRules';
 import { attackDefenseMultiplier, resolveAttack } from './resolveAttack';
-import { antimage, blackDragon, goblin, mage, swordsman } from './testUnits';
+import { antimage, blackDragon, goblin, mage, swordsman } from './testFixtures';
 
 /** Smallest possible damage roll (damageMin). */
 const minRoll = (): number => 0;
@@ -260,6 +260,8 @@ describe('resolveAttack — pure combat resolution', () => {
       'afterMagicResist',
       'afterPercentBonus',
       'attackDefenseMultiplier',
+      'effectiveAttack',
+      'effectiveDefense',
       'finalDamage',
       'flatBonusApplied',
       'magicResistApplied',
@@ -385,6 +387,82 @@ describe('resolveAttack — pure combat resolution', () => {
 
     expect(antimage).toEqual(attackerBefore);
     expect(blackDragon).toEqual(defenderBefore);
+  });
+
+  it('20. stack HP pool: 5 units of 200 HP (pool 1000), damage 300 -> 4 alive, front unit 100 HP', () => {
+    const bigStack: CombatUnit = { ...blackDragon, stackCount: 5, currentHp: 1000 }; // 200 * 5
+    // Fixed roll of 100 per unit; attack 12 vs defense 12 -> multiplier exactly x1.0.
+    const attacker: CombatUnit = {
+      ...withStats(antimage, { attack: 12, damageMin: 100, damageMax: 100 }),
+      stackCount: 3,
+    };
+
+    const result = resolveAttack(attacker, bigStack, { random: minRoll });
+
+    expect(result.damageDealt).toBe(300);
+    expect(result.defenderHpAfter).toBe(700); // the pool
+    expect(result.stackAliveCount).toBe(4); // ceil(700 / 200)
+    expect(result.frontUnitHp).toBe(100); // 700 - 3 * 200
+    expect(result.defenderDefeated).toBe(false);
+  });
+
+  it('21. the same stack, damage 950 -> 1 unit alive with 50 HP left', () => {
+    const bigStack: CombatUnit = { ...blackDragon, stackCount: 5, currentHp: 1000 };
+    const attacker: CombatUnit = {
+      ...withStats(antimage, { attack: 12, damageMin: 100, damageMax: 100 }),
+      stackCount: 9,
+    };
+
+    const result = resolveAttack(attacker, bigStack, { random: minRoll, flatDamageBonus: 50 });
+
+    expect(result.damageDealt).toBe(950); // 900 rolled + 50 flat, x1.0
+    expect(result.defenderHpAfter).toBe(50);
+    expect(result.stackAliveCount).toBe(1); // ceil(50 / 200) — a wounded unit is still alive
+    expect(result.frontUnitHp).toBe(50);
+    expect(result.defenderDefeated).toBe(false);
+  });
+
+  it('22. damage that wipes the pool exactly (1000) -> no units left and no retaliation', () => {
+    const bigStack: CombatUnit = { ...blackDragon, stackCount: 5, currentHp: 1000 };
+    const attacker: CombatUnit = {
+      ...withStats(antimage, { attack: 12, damageMin: 100, damageMax: 100 }),
+      stackCount: 10,
+    };
+
+    const result = resolveAttack(attacker, bigStack, { random: minRoll });
+
+    expect(result.damageDealt).toBe(1000);
+    expect(result.defenderHpAfter).toBe(0);
+    expect(result.stackAliveCount).toBe(0);
+    expect(result.frontUnitHp).toBe(0);
+    expect(result.defenderDefeated).toBe(true);
+    // The dragon has no NoRetaliation, so only defenderDefeated stops the retaliation.
+    expect(result.retaliationTriggered).toBe(false);
+  });
+
+  it('23. heroAttackBonus is added to the attack for the multiplier only (5 + 10 = 15)', () => {
+    const weakHero = withStats(swordsman, { attack: 5 }); // against goblin defense 3
+
+    const withoutBonus = resolveAttack(weakHero, goblin, { random: minRoll });
+    const withBonus = resolveAttack(weakHero, goblin, { random: minRoll, heroAttackBonus: 10 });
+
+    expect(withoutBonus.breakdown.effectiveAttack).toBe(5);
+    expect(withoutBonus.breakdown.attackDefenseMultiplier).toBeCloseTo(1.1); // 1 + 0.05 * 2
+    expect(withBonus.breakdown.effectiveAttack).toBe(15);
+    expect(withBonus.breakdown.effectiveDefense).toBe(3); // untouched
+    expect(withBonus.breakdown.attackDefenseMultiplier).toBeCloseTo(1.6); // 1 + 0.05 * 12
+    expect(withBonus.damageDealt).toBe(16); // roll 10 * 1.6
+    // Purity: the unit object itself is not modified.
+    expect(weakHero.stats.attack).toBe(5);
+  });
+
+  it('24. heroDefenseBonus raises the defense used by the multiplier', () => {
+    const result = resolveAttack(swordsman, goblin, { random: minRoll, heroDefenseBonus: 10 });
+
+    expect(result.breakdown.effectiveAttack).toBe(6);
+    expect(result.breakdown.effectiveDefense).toBe(13); // 3 + 10
+    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1 - 0.025 * 7); // 0.825
+    expect(goblin.stats.defense).toBe(3); // not mutated
   });
 });
 

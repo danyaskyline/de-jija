@@ -93,7 +93,7 @@ MobGroupSpawn { mobs: [{entityId, mobType, x, y}, ...] }
 Изолированная чистая функция, не размазанная по боевому движку (`server/src/combat/resolveAttack.ts`):
 ```
 resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext, rules?: CombatRules)
-  → { damageDealt, defenderHpAfter, defenderDefeated, retaliationTriggered, blockedByImmunity, breakdown, notes }
+  → { damageDealt, defenderHpAfter, stackAliveCount, frontUnitHp, defenderDefeated, retaliationTriggered, blockedByImmunity, breakdown, notes }
 ```
 `rules` по умолчанию — коэффициенты баланса, загруженные в память при старте сервера; `context.random` инжектится, поэтому тесты полностью детерминированы.
 
@@ -102,7 +102,7 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 2. **Теги защитника** — `MagicImmune` даёт ПОЛНЫЙ блок входящей магии (это не то же самое, что частичный `magicResistPercent`).
 3. **Бросок урона стека** — `roll(damageMin × stackCount .. damageMax × stackCount)`, `stackCount` по умолчанию 1.
 4. **Flat-бонус** — `flatDamageBonus` в единицах урона, применяется ДО множителя атака/защита.
-5. **Множитель атака/защита** — по коэффициентам из `config/combat-rules.json`:
+5. **Множитель атаки/защиты** — сначала к характеристикам прибавляются прямые бонусы героя: `effectiveAttack = attack + heroAttackBonus`, `effectiveDefense = defense + heroDefenseBonus` (только для этого расчёта, объекты юнитов не мутируются — функция остаётся чистой), затем по коэффициентам из `config/combat-rules.json`:
    - `attack > defense`: `min(attackAdvantageCapPercent/100, 1 + attackAdvantagePercentPerPoint/100 × (attack − defense))`;
    - `attack < defense`: `max(defensePenaltyFloorPercent/100, 1 − defensePenaltyPercentPerPoint/100 × (defense − attack))`;
    - равны: `1`.
@@ -110,7 +110,7 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 7. **Магическое сопротивление** — `magicResistPercent` снижает урон магической атаки на этот процент (только для магических атак, значение приводится к диапазону 0..100); это частичное снижение, а не блок.
 8. **Мораль** — при `isMoralePenalized = true` итог умножается на `moralePenaltyMultiplier`.
 9. **Минимум урона** — итог округляется вниз и не может быть меньше `minimumDamage` (тоже из конфига).
-10. **Применение урона** — HP защитника уменьшаются на `damageDealt`, но не ниже нуля: `defenderHpAfter = max(0, currentHp − damageDealt)`. Отрицательное HP в игре бессмысленно, поэтому уничтоженный стек — это явное состояние `defenderDefeated = (defenderHpAfter === 0)`, а не «минус 190 HP».
+10. **Применение урона к пулу стека** (модель как в HoMM3: `currentHp` — это ПУЛ HP всего стека, он стартует как `stats.hp × stackCount` и тратится уроном; юниты гибнут целиком, а головной держит остаток пула): `poolBefore = currentHp` (актуальный остаток, максимум заново не пересчитывается), `defenderHpAfter = max(0, poolBefore − damageDealt)`, `stackAliveCount = 0` при нулевом пуле, иначе `ceil(defenderHpAfter / stats.hp)` — округление ВВЕРХ, потому что подраненный юнит жив, а `frontUnitHp = defenderHpAfter − (stackAliveCount − 1) × stats.hp`. Отрицательный HP невозможен, а уничтоженный стек — это явное состояние `defenderDefeated = (stackAliveCount === 0)`.
 11. **Ответка** — возможна, если у атакующего нет `NoRetaliation`, стек защитника НЕ уничтожен (проверка идёт через `defenderDefeated`, а не через сырое число) и текущий удар не является ответкой на ответку (`isRetaliation`).
 
 Конфигурация баланса — файл, НЕ БД. Все коэффициенты формулы лежат в `config/combat-rules.json` (`attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`, `defensePenaltyFloorPercent`, `magicResistIsPercentReduction`, `moralePenaltyMultiplier`, `minimumDamage`), читаются ОДИН раз при старте сервера в память (`server/src/combat/combatRules.ts`) и передаются в `resolveAttack`; сам `resolveAttack` файл никогда не читает. Битый или неполный файл валит старт с понятным сообщением (например «отсутствует обязательное поле minimumDamage»). Файл правится руками и версионируется git — см. decisions.md, 012.
@@ -121,6 +121,7 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 
 ## Отладочный инструмент: песочница боя (временный)
 - `GET /debug/combat-sandbox` — HTML-форма для ручной проверки (`server/debug/combat-sandbox.html`). Не часть игрового клиента, не связана с авторизацией персонажа, ничего не сохраняет.
+- `GET /debug/fixtures` — готовые тестовые юниты для выпадающих списков «Выбрать юнита» (те же фикстуры `server/src/combat/testFixtures.ts`, на которых построены юнит-тесты, поэтому пресеты не могут разойтись с проверенными числами). Выбор юнита заполняет форму, но любое поле потом можно поправить вручную.
 - `POST /debug/attack` — принимает параметры атакующего/защитника и context, возвращает полный результат `resolveAttack` с `breakdown`.
 - HTTP выбран вместо WebSocket намеренно: инструмент — это «заполнил форму → получил разбор», а игровой протокол в `/shared` засорять не нужно; endpoint удобно дёргать и через curl.
 - Локальный инструмент разработчика: при `NODE_ENV=production` роут не монтируется, модуль помечен `// DEBUG-ONLY, remove before Phase 1` и удаляется вместе с `server/src/debug/` (docs/conventions.md).

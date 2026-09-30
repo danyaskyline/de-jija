@@ -68,7 +68,14 @@ export type CombatUnit = {
   name: string;
   stats: UnitStats;
   tags: AbilityTag[];
-  /** Current hit points; may be <= 0 for a dead unit. */
+  /**
+   * Remaining hit points of the WHOLE stack (the "pool").
+   *
+   * It starts at stats.hp * stackCount and is spent by damage, so it is the
+   * current truth during a battle — not the maximum recomputed every time.
+   * Individual units are derived from the pool: how many are still alive and how
+   * much HP the front (wounded) unit has left (see resolveAttack).
+   */
   currentHp: number;
   /**
    * Number of units in this stack. The damage roll is per unit

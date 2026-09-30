@@ -20,6 +20,7 @@ import express, { type Router } from 'express';
 
 import type { AbilityTag, CombatUnit, UnitStats } from '@de-jija/shared';
 
+import { combatFixtures } from '../combat/testFixtures';
 import { resolveAttack, type AttackContext } from '../combat/resolveAttack';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -44,6 +45,8 @@ const CONTEXT_NUMBER_FIELDS = [
   'flatDamageBonus',
   'percentDamageBonus',
   'magicResistPercent',
+  'heroAttackBonus',
+  'heroDefenseBonus',
   'meleeOffenseBonusPercent',
   'rangedOffenseBonusPercent',
   'magicOffenseBonusPercent',
@@ -164,6 +167,12 @@ export function createDebugRouter(): Router {
   // The sandbox page itself.
   router.get('/combat-sandbox', (_request, response) => {
     response.sendFile(SANDBOX_PAGE_PATH);
+  });
+
+  // Preset units for the sandbox dropdown: the very same fixtures the unit tests use,
+  // so the presets can never drift away from the tested numbers.
+  router.get('/fixtures', (_request, response) => {
+    response.json(combatFixtures);
   });
 
   // Resolves one attack and returns the full breakdown: the tool behind the page.

@@ -10,10 +10,10 @@
       }
       body {
         margin: 0;
-        padding: 16px 20px 70px;
+        padding: 16px 20px 30px;
         background: #14161a;
         color: #e6e6e6;
-        font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+        font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
       }
       h1 {
         font-size: 20px;
@@ -31,15 +31,14 @@
         background: #4a2c00;
         border: 1px solid #a86a00;
         color: #ffd79a;
-        padding: 10px 12px;
+        padding: 8px 12px;
         border-radius: 6px;
-        margin: 10px 0 18px;
-        max-width: 1000px;
+        margin: 8px 0 14px;
       }
       .banner strong {
         color: #ffb84d;
       }
-      /* Three columns on a wide screen: attacker | attack parameters + result | defender.
+      /* Three columns on a wide screen: attacker | parameters + result | defender.
          Each panel scrolls inside itself, so the page itself never scrolls. */
       .layout {
         display: grid;
@@ -57,7 +56,7 @@
         border: 1px solid #2c313b;
         border-radius: 8px;
         padding: 12px 14px;
-        max-height: calc(100vh - 165px);
+        max-height: calc(100vh - 150px);
         overflow-y: auto;
       }
       .row {
@@ -65,7 +64,7 @@
         grid-template-columns: 1fr 130px;
         gap: 8px;
         align-items: center;
-        margin: 5px 0;
+        margin: 4px 0;
       }
       .row.wide {
         grid-template-columns: 1fr;
@@ -73,21 +72,32 @@
       .row label {
         color: #b9c2cf;
       }
-      input {
+      input,
+      select {
         background: #0f1116;
         color: #e6e6e6;
         border: 1px solid #39404d;
         border-radius: 5px;
-        padding: 5px 7px;
+        padding: 4px 7px;
         font: inherit;
         width: 100%;
         box-sizing: border-box;
       }
+      .preset-row {
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #2c313b;
+      }
+      .preset-row label {
+        display: block;
+        margin-bottom: 4px;
+        color: #b9c2cf;
+      }
       .tags {
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 10px;
+        gap: 10px;
+        margin-top: 8px;
         padding-top: 8px;
         border-top: 1px solid #2c313b;
       }
@@ -102,12 +112,12 @@
         width: auto;
       }
       button {
-        margin-top: 16px;
+        margin-top: 12px;
         background: #2f6feb;
         color: #fff;
         border: 0;
         border-radius: 6px;
-        padding: 11px 24px;
+        padding: 9px 22px;
         font: inherit;
         font-size: 15px;
         cursor: pointer;
@@ -116,16 +126,14 @@
         background: #3d7ff5;
       }
       #result {
-        margin-top: 18px;
-        max-width: 1000px;
+        margin-top: 12px;
       }
       table {
         border-collapse: collapse;
         width: 100%;
-        max-width: 760px;
       }
       td {
-        padding: 4px 10px 4px 0;
+        padding: 3px 10px 3px 0;
         border-bottom: 1px solid #262b34;
       }
       td.value {
@@ -135,21 +143,21 @@
         white-space: nowrap;
       }
       .total {
-        font-size: 34px;
+        font-size: 30px;
         font-weight: 700;
         color: #7dffa8;
-        margin: 16px 0 0;
+        margin: 12px 0 0;
       }
       .notes {
-        margin: 6px 0 0;
-        padding-left: 20px;
+        margin: 4px 0 0;
+        padding-left: 18px;
         color: #b9c2cf;
       }
       .error {
         color: #ff9b9b;
       }
       details {
-        margin-top: 14px;
+        margin-top: 10px;
         color: #93a0b0;
       }
       pre {
@@ -174,6 +182,10 @@
     <div class="layout">
       <section>
         <h2>Атакующий</h2>
+        <div class="preset-row">
+          <label for="attacker-preset">Выбрать юнита (поля потом можно править вручную)</label>
+          <select id="attacker-preset"></select>
+        </div>
         <div id="attacker-fields"></div>
       </section>
 
@@ -194,14 +206,17 @@
           <span class="hint">Нажмите «Ударить», чтобы увидеть результат.</span>
         </div>
         <p class="hint">
-          Мастерства героя (melee/ranged/magicOffenseBonusPercent) и defensiveArmorReductionPercent объявлены в коде
-          заглушками на 0: в формулу они пока не входят, и resolveAttack сообщает об этом в notes, если передать ненулевое
-          значение.
+          <code>heroAttackBonus</code> и <code>heroDefenseBonus</code> уже участвуют в множителе атаки/защиты. Мастерства
+          героя и defensiveArmorReductionPercent — заглушки на 0, в формулу не входят.
         </p>
       </section>
 
       <section>
         <h2>Защитник</h2>
+        <div class="preset-row">
+          <label for="defender-preset">Выбрать юнита (поля потом можно править вручную)</label>
+          <select id="defender-preset"></select>
+        </div>
         <div id="defender-fields"></div>
       </section>
     </div>
@@ -212,49 +227,28 @@
 
       /** CombatUnit fields shown for both sides. */
       const UNIT_FIELDS = [
-        { key: 'hp', label: 'HP (максимум)', value: 90 },
-        { key: 'attack', label: 'Атака', value: 12 },
-        { key: 'defense', label: 'Защита', value: 8 },
-        { key: 'speed', label: 'Скорость', value: 5 },
-        { key: 'damageMin', label: 'Урон за юнита, мин', value: 40 },
-        { key: 'damageMax', label: 'Урон за юнита, макс', value: 60 },
-        { key: 'stackCount', label: 'Юнитов в стеке', value: 1 },
+        { key: 'hp', label: 'HP юнита (за одного)' },
+        { key: 'attack', label: 'Атака' },
+        { key: 'defense', label: 'Защита' },
+        { key: 'speed', label: 'Скорость' },
+        { key: 'damageMin', label: 'Урон за юнита, мин' },
+        { key: 'damageMax', label: 'Урон за юнита, макс' },
+        { key: 'stackCount', label: 'Юнитов в стеке' },
       ];
 
       const TAGS = ['NoRetaliation', 'AreaAttack', 'MagicImmune', 'MagicDamage', 'Piercing'];
 
       /** Attack modifiers: they go into resolveAttack's context. */
       const CONTEXT_FIELDS = [
-        { key: 'flatDamageBonus', label: 'flatDamageBonus (единицы урона)', value: 0 },
-        { key: 'percentDamageBonus', label: 'percentDamageBonus (%)', value: 0 },
-        { key: 'magicResistPercent', label: 'magicResistPercent (% — только магия)', value: 0 },
+        { key: 'flatDamageBonus', label: 'flatDamageBonus (единицы урона)' },
+        { key: 'percentDamageBonus', label: 'percentDamageBonus (%)' },
+        { key: 'magicResistPercent', label: 'magicResistPercent (% — только магия)' },
+        { key: 'heroAttackBonus', label: 'heroAttackBonus (прямая прибавка к атаке героя)' },
+        { key: 'heroDefenseBonus', label: 'heroDefenseBonus (прямая прибавка к защите героя)' },
       ];
 
-      /** Starting values: the antimage vs the black dragon from the unit tests. */
-      const PRESETS = {
-        attacker: {
-          name: 'Антимаг (ап)',
-          hp: 90,
-          attack: 12,
-          defense: 8,
-          speed: 5,
-          damageMin: 40,
-          damageMax: 60,
-          stackCount: 1,
-          tags: ['NoRetaliation', 'AreaAttack'],
-        },
-        defender: {
-          name: 'Чёрный дракон',
-          hp: 200,
-          attack: 15,
-          defense: 12,
-          speed: 5,
-          damageMin: 30,
-          damageMax: 45,
-          stackCount: 1,
-          tags: ['MagicImmune'],
-        },
-      };
+      /** Presets selected by default in each form. */
+      const DEFAULT_PRESET_IDS = { attacker: 'antimage', defender: 'black_dragon' };
 
       /** Short element factory, so the code below stays readable. */
       function node(tag, text, className) {
@@ -283,22 +277,77 @@
         return input;
       }
 
-      function buildUnitForm(role) {
+      /** Preset units: the very same fixtures the unit tests use. */
+      async function loadFixtures() {
+        const response = await fetch('/debug/fixtures');
+        if (!response.ok) {
+          throw new Error('не удалось загрузить пресеты юнитов: HTTP ' + response.status);
+        }
+
+        return response.json();
+      }
+
+      /** Builds the "Выбрать юнита" dropdown, grouped by category. */
+      function buildPresetSelect(role, fixtures) {
+        const select = document.getElementById(role + '-preset');
+        const categories = [];
+        fixtures.forEach((fixture) => {
+          if (categories.indexOf(fixture.category) === -1) categories.push(fixture.category);
+        });
+
+        categories.forEach((category) => {
+          const group = node('optgroup');
+          group.label = category;
+          fixtures
+            .filter((fixture) => fixture.category === category)
+            .forEach((fixture) => {
+              const option = node('option', fixture.name + ' — HP ' + fixture.stats.hp);
+              option.value = fixture.id;
+              group.append(option);
+            });
+          select.append(group);
+        });
+
+        select.addEventListener('change', () => {
+          const fixture = fixtures.find((item) => item.id === select.value);
+          if (fixture) applyPreset(role, fixture);
+        });
+      }
+
+      /** Fills an already built form from a preset. Every field stays editable. */
+      function applyPreset(role, fixture) {
+        document.getElementById(role + '-name').value = fixture.name;
+
+        UNIT_FIELDS.forEach((field) => {
+          const value = field.key === 'stackCount' ? fixture.stackCount : fixture.stats[field.key];
+          document.getElementById(role + '-' + field.key).value = String(value);
+        });
+
+        TAGS.forEach((tag) => {
+          document.getElementById(role + '-tag-' + tag).checked = fixture.tags.indexOf(tag) !== -1;
+        });
+
+        // Empty = "full pool": HP per unit * stack size.
+        document.getElementById(role + '-currentHp').value = '';
+      }
+
+      /** Builds one unit form (name, stats, tags) for the given role. */
+      function buildUnitForm(role, fixture) {
         const container = document.getElementById(role + '-fields');
-        const preset = PRESETS[role];
 
         const nameRow = node('div', null, 'row wide');
         const nameInput = node('input');
         nameInput.id = role + '-name';
-        nameInput.value = preset.name;
+        nameInput.value = fixture.name;
         nameRow.append(nameInput);
         container.append(nameRow);
 
         UNIT_FIELDS.forEach((field) => {
-          numberRow(container, role + '-' + field.key, field.label, preset[field.key]);
+          const value = field.key === 'stackCount' ? fixture.stackCount : fixture.stats[field.key];
+          numberRow(container, role + '-' + field.key, field.label, value);
         });
 
-        numberRow(container, role + '-currentHp', 'Текущее HP (пусто = максимум)', '', '= HP');
+        numberRow(container, role + '-currentHp', 'Текущее HP пула (пусто = HP × стек)', '', '= HP × стек');
 
         const tagBox = node('div', null, 'tags');
         TAGS.forEach((tag) => {
@@ -306,7 +355,7 @@
           const checkbox = node('input');
           checkbox.type = 'checkbox';
           checkbox.id = role + '-tag-' + tag;
-          checkbox.checked = preset.tags.indexOf(tag) !== -1;
+          checkbox.checked = fixture.tags.indexOf(tag) !== -1;
           label.append(checkbox, node('span', tag));
           tagBox.append(label);
         });
@@ -317,7 +366,7 @@
         const container = document.getElementById('context-fields');
 
         CONTEXT_FIELDS.forEach((field) => {
-          numberRow(container, 'context-' + field.key, field.label, field.value);
+          numberRow(container, 'context-' + field.key, field.label, 0);
         });
 
         numberRow(
@@ -345,6 +394,7 @@
           damageMin: stat('damageMin'),
           damageMax: stat('damageMax'),
         };
+        const stackCount = stat('stackCount');
         const currentHpRaw = document.getElementById(role + '-currentHp').value;
 
         return {
@@ -352,8 +402,9 @@
           name: document.getElementById(role + '-name').value,
           stats: stats,
           tags: TAGS.filter((tag) => document.getElementById(role + '-tag-' + tag).checked),
-          stackCount: stat('stackCount'),
-          currentHp: currentHpRaw === '' ? stats.hp : Number(currentHpRaw),
+          stackCount: stackCount,
+          // An empty pool field means "the stack is at full health": HP per unit * stack size.
+          currentHp: currentHpRaw === '' ? stats.hp * stackCount : Number(currentHpRaw),
         };
       }
 
@@ -430,6 +481,8 @@
           ['Бросок урона стека (damageMin..damageMax × stackCount)', fmt(b.stackRoll)],
           ['Flat-бонус (единицы урона)', (b.flatBonusApplied >= 0 ? '+' : '') + fmt(b.flatBonusApplied)],
           ['После flat-бонуса', fmt(b.afterFlatBonus)],
+          ['Эффективная атака (attack + heroAttackBonus)', fmt(b.effectiveAttack)],
+          ['Эффективная защита (defense + heroDefenseBonus)', fmt(b.effectiveDefense)],
           ['Множитель атака/защита', '×' + fmt(b.attackDefenseMultiplier)],
           ['После множителя атака/защита', fmt(b.afterAttackDefense)],
           ['Процентный бонус', (b.percentBonusApplied >= 0 ? '+' : '') + fmt(b.percentBonusApplied) + '%'],
@@ -449,15 +502,24 @@
 
         target.append(node('div', fmt(result.damageDealt), 'total'));
         target.append(node('div', 'ИТОГОВЫЙ УРОН (округление вниз, минимум = minimumDamage из конфига)', 'hint'));
+
+        // The stack model: how many units are left and how wounded the front one is.
+        const maxUnitHp = lastRequest ? lastRequest.defender.stats.hp : '?';
         target.append(
           node(
             'div',
-            'HP защитника после удара: ' +
-              fmt(result.defenderHpAfter) +
-              (result.defenderDefeated ? ' (стек уничтожен)' : ''),
+            'Осталось в стеке: ' +
+              result.stackAliveCount +
+              ' (HP головного юнита: ' +
+              fmt(result.frontUnitHp) +
+              '/' +
+              maxUnitHp +
+              ')' +
+              (result.defenderDefeated ? ' — стек уничтожен' : ''),
             'hint',
           ),
         );
+        target.append(node('div', 'Пул HP защитника после удара: ' + fmt(result.defenderHpAfter), 'hint'));
         target.append(
           node('div', 'Стек уничтожен (defenderDefeated): ' + (result.defenderDefeated ? 'да' : 'нет'), 'hint'),
         );
@@ -465,7 +527,11 @@
           node('div', 'Ответка (retaliationTriggered): ' + (result.retaliationTriggered ? 'да' : 'нет'), 'hint'),
         );
         target.append(
-          node('div', 'Полный блок иммунитетом (blockedByImmunity): ' + (result.blockedByImmunity ? 'да' : 'нет'), 'hint'),
+          node(
+            'div',
+            'Полный блок иммунитетом (blockedByImmunity): ' + (result.blockedByImmunity ? 'да' : 'нет'),
+            'hint',
+          ),
         );
 
         target.append(node('div', 'Заметки движка (notes):', 'hint'));
@@ -479,14 +545,35 @@
         target.append(details);
       }
 
-      buildUnitForm('attacker');
-      buildUnitForm('defender');
-      buildContextForm();
-      document.getElementById('strike').addEventListener('click', strike);
-      // Ctrl+Enter strikes too: handy while tweaking numbers.
-      document.addEventListener('keydown', (event) => {
-        if (event.ctrlKey && event.key === 'Enter') strike();
-      });
+      /** Loads the presets from the server and builds the whole page. */
+      async function init() {
+        let fixtures;
+        try {
+          fixtures = await loadFixtures();
+        } catch (error) {
+          const target = document.getElementById('result');
+          target.innerHTML = '';
+          target.append(node('p', 'Не удалось загрузить пресеты юнитов: ' + error.message, 'error'));
+          target.append(node('p', 'Сервер запущен? Команда: npm run dev:server', 'hint'));
+          return;
+        }
+
+        ['attacker', 'defender'].forEach((role) => {
+          const preset = fixtures.find((item) => item.id === DEFAULT_PRESET_IDS[role]) ?? fixtures[0];
+          buildUnitForm(role, preset);
+          buildPresetSelect(role, fixtures);
+          document.getElementById(role + '-preset').value = preset.id;
+        });
+
+        buildContextForm();
+        document.getElementById('strike').addEventListener('click', strike);
+        // Ctrl+Enter strikes too: handy while tweaking numbers.
+        document.addEventListener('keydown', (event) => {
+          if (event.ctrlKey && event.key === 'Enter') strike();
+        });
+      }
+
+      init();
     </script>
   </body>
 </html>

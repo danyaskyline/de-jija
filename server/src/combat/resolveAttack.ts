@@ -43,6 +43,14 @@ export type AttackContext = {
   /** When true the result is multiplied by rules.moralePenaltyMultiplier. */
   isMoralePenalized?: boolean;
 
+  /**
+   * Flat bonus to the ATTACKER's attack for this calculation only (hero items,
+   * skill tree, ...). The unit objects are never modified — the function stays pure.
+   */
+  heroAttackBonus?: number;
+  /** Flat bonus to the DEFENDER's defense for this calculation only. */
+  heroDefenseBonus?: number;
+
   // --- TODO: hero battle masteries. Always 0 for now, because the source
   // (skill tree / items / something else) is an open design question. No logic
   // is implemented for them: a non-zero value is reported in `notes`, so the
@@ -62,6 +70,10 @@ export type DamageBreakdown = {
   stackRoll: number;
   flatBonusApplied: number;
   afterFlatBonus: number;
+  /** Attack used for the multiplier, after heroAttackBonus. */
+  effectiveAttack: number;
+  /** Defense used for the multiplier, after heroDefenseBonus. */
+  effectiveDefense: number;
   attackDefenseMultiplier: number;
   afterAttackDefense: number;
   percentBonusApplied: number;
@@ -76,9 +88,13 @@ export type DamageBreakdown = {
 
 export type AttackResult = {
   damageDealt: number;
-  /** Remaining hit points of the defender, never negative: 0 means the stack is gone. */
+  /** HP left in the whole stack pool, never negative. */
   defenderHpAfter: number;
-  /** True when this hit left the defender with 0 HP (the stack is destroyed). */
+  /** How many units of the stack are still alive after the hit (0 = stack is gone). */
+  stackAliveCount: number;
+  /** HP of the front (wounded) unit: from 1 to stats.hp, or 0 when nothing is alive. */
+  frontUnitHp: number;
+  /** True when no unit of the stack survived this hit (stackAliveCount === 0). */
   defenderDefeated: boolean;
   retaliationTriggered: boolean;
   blockedByImmunity: boolean;
@@ -175,12 +191,18 @@ function calculateDamage(
   const afterFlatBonus = stackRoll + flatBonusApplied;
 
   // Step 5 — attack/defense multiplier from config/combat-rules.json.
-  const attackDefenseFactor = attackDefenseMultiplier(
-    attacker.stats.attack,
-    defender.stats.defense,
-    rules,
-  );
+  // Hero bonuses (items, skill tree) are added HERE and only here: the unit objects
+  // themselves are never modified, so resolveAttack stays a pure function.
+  const effectiveAttack = attacker.stats.attack + (context.heroAttackBonus ?? 0);
+  const effectiveDefense = defender.stats.defense + (context.heroDefenseBonus ?? 0);
+  const attackDefenseFactor = attackDefenseMultiplier(effectiveAttack, effectiveDefense, rules);
   const afterAttackDefense = afterFlatBonus * attackDefenseFactor;
+
+  if ((context.heroAttackBonus ?? 0) !== 0 || (context.heroDefenseBonus ?? 0) !== 0) {
+    notes.push(
+      `hero bonuses: attack +${context.heroAttackBonus ?? 0} (${attacker.stats.attack} -> ${effectiveAttack}), defense +${context.heroDefenseBonus ?? 0} (${defender.stats.defense} -> ${effectiveDefense})`,
+    );
+  }
 
   const advantageCap = rules.attackAdvantageCapPercent / 100;
   const penaltyFloor = rules.defensePenaltyFloorPercent / 100;
@@ -190,7 +212,7 @@ function calculateDamage(
       `attack advantage is capped at x${advantageCap} (attackAdvantageCapPercent=${rules.attackAdvantageCapPercent})`,
     );
   }
-  if (attacker.stats.attack < defender.stats.defense && attackDefenseFactor === penaltyFloor) {
+  if (effectiveAttack < effectiveDefense && attackDefenseFactor === penaltyFloor) {
     notes.push(
       `defense penalty is floored at x${penaltyFloor} (defensePenaltyFloorPercent=${rules.defensePenaltyFloorPercent})`,
     );
@@ -244,6 +266,8 @@ function calculateDamage(
       stackRoll,
       flatBonusApplied,
       afterFlatBonus,
+      effectiveAttack,
+      effectiveDefense,
       attackDefenseMultiplier: attackDefenseFactor,
       afterAttackDefense,
       percentBonusApplied,
@@ -331,14 +355,20 @@ export function resolveAttack(
   notes.push(...pipeline.notes);
   const { breakdown } = pipeline;
 
-  // Step 10 (apply). HP is clamped at zero: "-193 HP" has no meaning in the game,
-  // and a destroyed stack must be an explicit state, not a negative number.
-  const defenderHpAfter = Math.max(0, defender.currentHp - breakdown.finalDamage);
-  const defenderDefeated = defenderHpAfter === 0;
+  // Step 10 (apply) — HoMM3-style stack model. `currentHp` is the POOL of hit points of
+  // the whole stack (it starts at stats.hp * stackCount), so damage eats whole units and
+  // the front (wounded) unit carries whatever is left of the pool.
+  const unitMaxHp = defender.stats.hp > 0 ? defender.stats.hp : 1;
+  const poolBefore = Math.max(0, defender.currentHp);
+  const defenderHpAfter = Math.max(0, poolBefore - breakdown.finalDamage);
+  const stackAliveCount = defenderHpAfter === 0 ? 0 : Math.ceil(defenderHpAfter / unitMaxHp);
+  const frontUnitHp =
+    defenderHpAfter === 0 ? 0 : defenderHpAfter - (stackAliveCount - 1) * unitMaxHp;
+  const defenderDefeated = stackAliveCount === 0;
 
-  if (defenderDefeated && breakdown.finalDamage > defender.currentHp) {
+  if (defenderDefeated && breakdown.finalDamage > poolBefore) {
     notes.push(
-      `damage (${breakdown.finalDamage}) exceeded the remaining HP (${defender.currentHp}): the stack is destroyed`,
+      `damage (${breakdown.finalDamage}) exceeded the stack pool (${poolBefore} HP): the stack is destroyed`,
     );
   }
 
@@ -361,6 +391,8 @@ export function resolveAttack(
   return {
     damageDealt: breakdown.finalDamage,
     defenderHpAfter,
+    stackAliveCount,
+    frontUnitHp,
     defenderDefeated,
     retaliationTriggered,
     blockedByImmunity,
