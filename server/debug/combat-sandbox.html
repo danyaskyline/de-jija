@@ -500,8 +500,17 @@
         }
 
         const b = result.breakdown;
+
+        // Stack roll shown unpacked: how much rolled per unit x how many units there are.
+        // The roll itself is unchanged — this only formats the number for the eye.
+        const stackSize = lastRequest ? lastRequest.attacker.stackCount || 1 : 1;
+        const stackRollText =
+          stackSize > 1
+            ? fmt(b.stackRoll / stackSize) + ' dmg × ' + stackSize + ' = ' + fmt(b.stackRoll)
+            : fmt(b.stackRoll);
+
         const rows = [
-          ['1. Бросок урона стека (damageMin..damageMax × stackCount)', fmt(b.stackRoll)],
+          ['1. Бросок урона стека (damageMin..damageMax × stackCount)', stackRollText],
           ['2. Flat-бонус (единицы урона)', (b.flatBonusApplied >= 0 ? '+' : '') + fmt(b.flatBonusApplied)],
           ['3. После flat-бонуса', fmt(b.afterFlatBonus)],
           ['4. Эффективная атака (attack + heroAttackBonus)', fmt(b.effectiveAttack)],
