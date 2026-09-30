@@ -154,6 +154,8 @@ function emptyBreakdown(): DamageBreakdown {
     stackRoll: 0,
     flatBonusApplied: 0,
     afterFlatBonus: 0,
+    effectiveAttack: 0,
+    effectiveDefense: 0,
     attackDefenseMultiplier: 0,
     afterAttackDefense: 0,
     percentBonusApplied: 0,
