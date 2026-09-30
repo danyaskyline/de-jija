@@ -1,0 +1,24 @@
+{
+  "name": "@de-jija/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Game server: HTTP + WebSocket on one port (walking skeleton stage)",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@de-jija/shared": "*",
+    "express": "^5.2.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

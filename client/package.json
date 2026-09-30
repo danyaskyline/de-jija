@@ -1,0 +1,21 @@
+{
+  "name": "@de-jija/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Game client: PixiJS renderer + WebSocket connection (walking skeleton stage)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@de-jija/shared": "*",
+    "pixi.js": "^8.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}

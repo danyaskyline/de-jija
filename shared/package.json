@@ -1,0 +1,18 @@
+{
+  "name": "@de-jija/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Protocol types shared between server and client (no game logic yet)",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
