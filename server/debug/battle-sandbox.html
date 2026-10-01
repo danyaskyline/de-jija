@@ -955,8 +955,12 @@
       function buildTools() {
         const target = document.getElementById('tools');
 
-        target.append(node('div', 'Раунд: ' + (state.battle ? state.battle.round : 1), 'mode')).id =
-          'round-label';
+        // `append` returns undefined (only `appendChild` returns the node), so the id is
+        // set on the created element, not on the result of append.
+        const roundLabel = node('div', 'Раунд: ' + (state.battle ? state.battle.round : 1), 'mode');
+
+        roundLabel.id = 'round-label';
+        target.append(roundLabel);
 
         const buttons = node('div', null, 'btn-row');
 
@@ -1372,8 +1376,12 @@
           buildUnitsPanel(sideName, sideName === 'left' ? 'Юниты слева' : 'Юниты справа'),
         );
         // The setup error belongs right next to the panels that caused it.
-        column.append(node('div', null, 'error')).id = 'panel-error';
-        if (state.panelError) column.lastChild.textContent = state.panelError;
+        // Again: `append` returns undefined, so keep the element itself.
+        const panelError = node('div', null, 'error');
+
+        panelError.id = 'panel-error';
+        if (state.panelError) panelError.textContent = state.panelError;
+        column.append(panelError);
       }
 
       /** One unit card: stack size, every numeric stat and the manual bonuses. */
@@ -1906,34 +1914,62 @@
         refreshSetupText();
       }
 
-      /** Loads everything the page needs and creates the first battle. */
+      /**
+       * Loads everything the page needs and creates the first battle.
+       *
+       * Every step goes through step(), so a failure says WHERE it happened: a bare
+       * "Cannot set properties of undefined" points nowhere, while
+       * "init: панели сторон — ..." names the exact step for the tester.
+       */
+      async function step(stageName, action) {
+        try {
+          return await action();
+        } catch (error) {
+          // Keep the original message, but prefix the stage — that is the useful part.
+          const reason = (error && error.message) || String(error);
+
+          throw new Error('init: ' + stageName + ' — ' + reason);
+        }
+      }
+
       async function init() {
-        const [config, units, heroes] = await Promise.all([
-          apiGet('/debug/battle-config'),
-          apiGet('/debug/units'),
-          apiGet('/debug/heroes'),
-        ]);
+        const [config, units, heroes] = await step('загрузка конфигов и шаблонов', () =>
+          Promise.all([
+            apiGet('/debug/battle-config'),
+            apiGet('/debug/units'),
+            apiGet('/debug/heroes'),
+          ]),
+        );
 
         state.battleRules = config.body.battleRules;
         state.combatRules = config.body.combatRules;
         state.templates = units.body;
         state.skills = heroes.body;
 
-        buildTools();
-        buildSidePanel('left');
-        buildSidePanel('right');
-        buildBalance();
-        bindFieldEvents();
-
-        document.getElementById('log-clear').addEventListener('click', () => {
-          state.log = [];
-          renderLog();
+        await step('панель инструментов и баланс', () => {
+          buildTools();
+          buildBalance();
         });
-        document.getElementById('setup-copy').addEventListener('click', copySetupText);
-        document.getElementById('setup-apply').addEventListener('click', applySetupFromText);
+        await step('панели сторон', () => {
+          buildSidePanel('left');
+          buildSidePanel('right');
+        });
+        await step('обработчики поля и кнопок', () => {
+          bindFieldEvents();
 
-        renderAll();
-        await rebuildBattle();
+          document.getElementById('log-clear').addEventListener('click', () => {
+            state.log = [];
+            renderLog();
+          });
+          document.getElementById('setup-copy').addEventListener('click', copySetupText);
+          document.getElementById('setup-apply').addEventListener('click', applySetupFromText);
+        });
+        await step('первая отрисовка', () => {
+          renderAll();
+        });
+        await step('создание первого боя', () => {
+          return rebuildBattle();
+        });
       }
 
       init().catch((error) => {
