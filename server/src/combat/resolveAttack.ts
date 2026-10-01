@@ -368,13 +368,13 @@ function emptyBreakdown(): DamageBreakdown {
   };
 }
 
-/** Result of the damage pipeline (steps 3-9) together with its notes. */
+/** Result of the damage pipeline (steps 3-11) together with its notes. */
 type DamagePipeline = {
   breakdown: DamageBreakdown;
   notes: string[];
 };
 
-/** Steps 3-9: turns unit stats and modifiers into finalDamage. */
+/** Steps 3-11: turns unit stats and modifiers into finalDamage. */
 function calculateDamage(
   attacker: CombatUnit,
   defender: CombatUnit,
@@ -589,7 +589,7 @@ export function resolveAttack(
   notes.push(...pipeline.notes);
   const { breakdown } = pipeline;
 
-  // Step 10 (apply) — HoMM3-style stack model. `currentHp` is the POOL of hit points of
+  // Step 12 (apply) — HoMM3-style stack model. `currentHp` is the POOL of hit points of
   // the whole stack (it starts at stats.hp * stackCount), so damage eats whole units and
   // the front (wounded) unit carries whatever is left of the pool.
   const unitMaxHp = defender.stats.hp > 0 ? defender.stats.hp : 1;
@@ -606,7 +606,7 @@ export function resolveAttack(
     );
   }
 
-  // Step 11 (retaliation) — a retaliation is a FULL re-invocation of resolveAttack done by
+  // Step 13 (retaliation) — a retaliation is a FULL re-invocation of resolveAttack done by
   // the caller (roles swapped, isRetaliation: true): it goes through the whole formula with
   // all modifiers, including the luck of the unit that answers. There is deliberately NO
   // global "a retaliation is weaker" coefficient anywhere.

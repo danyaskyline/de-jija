@@ -242,22 +242,40 @@ function addUnusedNotes(unused: HeroModifiers['unused'], notes: string[]): void 
  *   - the ATTACKER's hero provides attack, melee/ranged offense and luck;
  *   - the DEFENDER's hero provides defense and armor.
  *
- * Because of that, a retaliation needs no special block: it is a full re-invocation with
- * the roles swapped, so the caller simply passes the two modifier objects the other way
- * round (attackerMods <-> defenderMods).
+ * Sources ADD UP instead of overwriting each other (docs/decisions.md, 017): whatever is
+ * already in `baseContext` (the manual fields of the sandbox, later items and buffs) is kept
+ * and the hero's value is added on top. A hero must never silently cancel a bonus that came
+ * from somewhere else.
+ *
+ * Because the bonuses are role-based, a retaliation needs no special block: it is a full
+ * re-invocation with the roles swapped, so the caller simply passes the two modifier
+ * objects the other way round (attackerMods <-> defenderMods).
  */
 export function applyHeroModifiersToContext(
   baseContext: AttackContext,
   attackerMods: HeroModifiers,
   defenderMods: HeroModifiers,
 ): AttackContext {
+  /** base value from the context + value from the hero. */
+  const add = (fromBase: number | undefined, fromHero: number): number => (fromBase ?? 0) + fromHero;
+
   return {
     ...baseContext,
-    heroAttackBonus: attackerMods.attackBonus,
-    heroDefenseBonus: defenderMods.defenseBonus,
-    meleeOffenseBonusPercent: attackerMods.meleeOffenseBonusPercent,
-    rangedOffenseBonusPercent: attackerMods.rangedOffenseBonusPercent,
-    defensiveArmorReductionPercent: defenderMods.defensiveArmorReductionPercent,
+    heroAttackBonus: add(baseContext.heroAttackBonus, attackerMods.attackBonus),
+    heroDefenseBonus: add(baseContext.heroDefenseBonus, defenderMods.defenseBonus),
+    meleeOffenseBonusPercent: add(
+      baseContext.meleeOffenseBonusPercent,
+      attackerMods.meleeOffenseBonusPercent,
+    ),
+    rangedOffenseBonusPercent: add(
+      baseContext.rangedOffenseBonusPercent,
+      attackerMods.rangedOffenseBonusPercent,
+    ),
+    defensiveArmorReductionPercent: add(
+      baseContext.defensiveArmorReductionPercent,
+      defenderMods.defensiveArmorReductionPercent,
+    ),
+    // Luck is already additive; the total is clamped because luck has a -3..3 range.
     luckBonus: clampLuckLevel((baseContext.luckBonus ?? 0) + attackerMods.luckLevel),
   };
 }

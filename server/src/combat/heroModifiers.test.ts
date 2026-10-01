@@ -291,3 +291,82 @@ describe('applyHeroModifiersToContext', () => {
     expect(retaliationContext.isRetaliation).toBe(true);
   });
 });
+
+describe('applyHeroModifiersToContext — sources ADD UP (decisions 017)', () => {
+  const attackerMods = {
+    ...emptyHeroModifiers(),
+    attackBonus: 10,
+    meleeOffenseBonusPercent: 30,
+    rangedOffenseBonusPercent: 50,
+  };
+  const defenderMods = {
+    ...emptyHeroModifiers(),
+    defenseBonus: 7,
+    defensiveArmorReductionPercent: 15,
+  };
+
+  it('keeps a manual bonus already in the context and adds the hero value on top', () => {
+    const context = applyHeroModifiersToContext(
+      {
+        heroAttackBonus: 1,
+        heroDefenseBonus: 2,
+        meleeOffenseBonusPercent: 3,
+        rangedOffenseBonusPercent: 4,
+        defensiveArmorReductionPercent: 5,
+      },
+      attackerMods,
+      defenderMods,
+    );
+
+    expect(context.heroAttackBonus).toBe(11); // 1 + 10
+    expect(context.heroDefenseBonus).toBe(9); // 2 + 7
+    expect(context.meleeOffenseBonusPercent).toBe(33); // 3 + 30
+    expect(context.rangedOffenseBonusPercent).toBe(54); // 4 + 50
+    expect(context.defensiveArmorReductionPercent).toBe(20); // 5 + 15
+  });
+
+  it('an absent context bonus counts as 0', () => {
+    const context = applyHeroModifiersToContext({}, attackerMods, defenderMods);
+
+    expect(context.heroAttackBonus).toBe(10);
+    expect(context.heroDefenseBonus).toBe(7);
+    expect(context.meleeOffenseBonusPercent).toBe(30);
+    expect(context.rangedOffenseBonusPercent).toBe(50);
+    expect(context.defensiveArmorReductionPercent).toBe(15);
+  });
+
+  it('never mutates the base context it was given', () => {
+    const base = { heroAttackBonus: 1, luckBonus: 1 };
+
+    const context = applyHeroModifiersToContext(base, attackerMods, defenderMods);
+
+    expect(base.heroAttackBonus).toBe(1);
+    expect(base.luckBonus).toBe(1);
+    expect(context).not.toBe(base);
+  });
+
+  it('a retaliation still takes the bonuses of the answering hero, and they add up', () => {
+    const originalAttacker = aggregateHeroModifiers(mightHero, skills); // attack 10, defense 10, armor 10
+    const originalDefender = aggregateHeroModifiers(
+      {
+        stats: { attack: 4, defense: 3, spellPower: 0, knowledge: 0 },
+        skills: [{ skillId: 'armorer', level: 3 }],
+      },
+      skills,
+    );
+
+    // The original defender answers: its modifiers become the "attacker" ones.
+    const context = applyHeroModifiersToContext(
+      { isRetaliation: true, heroAttackBonus: 1, heroDefenseBonus: 2 },
+      originalDefender,
+      originalAttacker,
+    );
+
+    expect(context.isRetaliation).toBe(true);
+    expect(context.heroAttackBonus).toBe(5); // base 1 + answering hero attack 4
+    expect(context.meleeOffenseBonusPercent).toBe(0); // the answering hero has no offense skill
+    expect(context.heroDefenseBonus).toBe(12); // base 2 + defending hero defense 10
+    expect(context.defensiveArmorReductionPercent).toBe(10); // the defending hero's armor
+  });
+});
+
