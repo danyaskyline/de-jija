@@ -12,10 +12,11 @@ import {
   aggregateHeroModifiers,
   applyHeroModifiersToContext,
   emptyHeroModifiers,
+  skillAffectsAttackNow,
   MAX_HERO_SKILLS,
   type HeroLoadout,
 } from './heroModifiers';
-import { initSkills, type SkillsData } from './skills';
+import { findSkill, initSkills, type SkillsData } from './skills';
 
 let skills: SkillsData;
 
@@ -367,6 +368,22 @@ describe('applyHeroModifiersToContext — sources ADD UP (decisions 017)', () =>
     expect(context.meleeOffenseBonusPercent).toBe(0); // the answering hero has no offense skill
     expect(context.heroDefenseBonus).toBe(12); // base 2 + defending hero defense 10
     expect(context.defensiveArmorReductionPercent).toBe(10); // the defending hero's armor
+  });
+});
+
+describe('skillAffectsAttackNow', () => {
+  it('is true only for the skills whose targets resolveAttack applies today', () => {
+    const affecting = skills.skills.filter(skillAffectsAttackNow).map((skill) => skill.id).sort();
+
+    expect(affecting).toEqual(['archery', 'armorer', 'luck', 'offense']);
+  });
+
+  it('is false for a skill with no numeric effects at all (a magic school)', () => {
+    const fire = findSkill(skills, 'fire_magic');
+
+    expect(fire).toBeDefined();
+    expect(fire?.effects).toEqual([]);
+    expect(skillAffectsAttackNow(fire!)).toBe(false);
   });
 });
 

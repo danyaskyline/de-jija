@@ -12,7 +12,7 @@
  */
 
 import { clampLuckLevel, type AttackContext } from './resolveAttack';
-import { findSkill, type SkillTarget, type SkillsData } from './skills';
+import { findSkill, type Skill, type SkillTarget, type SkillsData } from './skills';
 
 /** A hero's base stats. spellPower and knowledge are placeholders for a future spell system. */
 export type HeroStats = {
@@ -62,6 +62,27 @@ export type HeroModifiers = {
 
 /** A hero may learn at most this many skills. */
 export const MAX_HERO_SKILLS = 6;
+
+/**
+ * The effect targets that resolveAttack really applies right now
+ * (docs/decisions.md, 016). This list is the single source of truth for "does this skill
+ * change the damage today?" — the sandbox asks the server for it instead of repeating the
+ * list in the browser.
+ */
+export const ATTACK_TARGETS_IN_USE: readonly SkillTarget[] = [
+  'meleeOffenseBonusPercent',
+  'rangedOffenseBonusPercent',
+  'defensiveArmorReductionPercent',
+  'luckLevel',
+];
+
+/**
+ * True when at least one of the skill's effects is used by resolveAttack today. A skill with
+ * only descriptions (the four magic schools) is always false.
+ */
+export function skillAffectsAttackNow(skill: Skill): boolean {
+  return skill.effects.some((effect) => ATTACK_TARGETS_IN_USE.includes(effect.target));
+}
 
 /** All-zero modifiers: the "no hero" case (docs/decisions.md, 016). */
 export function emptyHeroModifiers(): HeroModifiers {

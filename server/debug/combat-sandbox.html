@@ -72,6 +72,58 @@
       .row label {
         color: #b9c2cf;
       }
+      /* Three columns; each column stacks several panels vertically. */
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+      }
+      /* The battle mode line right above the strike form. */
+      .mode {
+        background: #1f2937;
+        border: 1px solid #33415a;
+        border-radius: 6px;
+        color: #9fd3ff;
+        padding: 7px 10px;
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
+      /* A plain fieldset, so the hero toggle greys out every field at once
+         without losing the values typed into them. */
+      fieldset.hero-inputs {
+        border: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+      }
+      fieldset.hero-inputs:disabled {
+        opacity: 0.45;
+      }
+      .slot {
+        border: 1px solid #2c313b;
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin: 6px 0;
+      }
+      .slot-head {
+        color: #8b95a5;
+        font-size: 12px;
+        margin-bottom: 3px;
+      }
+      .slot select {
+        margin-bottom: 4px;
+      }
+      .slot-hint {
+        color: #b9c2cf;
+        font-size: 12px;
+        min-height: 15px;
+      }
+      .slot-title {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid #2c313b;
+      }
       input,
       select {
         background: #0f1116;
@@ -181,17 +233,34 @@
     </div>
 
     <div class="layout">
-      <section>
-        <h2>Атакующий</h2>
-        <div class="preset-row">
-          <label for="attacker-preset">Выбрать юнита (поля потом можно править вручную)</label>
-          <select id="attacker-preset"></select>
-        </div>
-        <div id="attacker-fields"></div>
-      </section>
+      <div class="col">
+        <section>
+          <h2>Герой атакующего</h2>
+          <div class="row">
+            <label for="hero-attacker-enabled">Герой участвует в бою</label>
+            <input id="hero-attacker-enabled" type="checkbox" />
+          </div>
+          <fieldset class="hero-inputs" id="hero-attacker-inputs" disabled>
+            <div id="hero-attacker-stats"></div>
+            <div class="slot-title hint">Навыки — до 6, один навык только в одном слоте</div>
+            <div id="hero-attacker-skills"></div>
+          </fieldset>
+        </section>
 
-      <section>
-        <h2>Удар: параметры и результат</h2>
+        <section>
+          <h2>Атакующий (юнит)</h2>
+          <div class="preset-row">
+            <label for="attacker-preset">Выбрать юнита (поля потом можно править вручную)</label>
+            <select id="attacker-preset"></select>
+          </div>
+          <div id="attacker-fields"></div>
+        </section>
+      </div>
+
+      <div class="col">
+        <section>
+          <h2>Удар: параметры и результат</h2>
+          <div id="battle-mode" class="mode">Режим: моб против моба</div>
         <div id="context-fields"></div>
         <div class="row">
           <label for="attackKind">Тип атаки (attackKind) — какое мастерство нападения применять</label>
@@ -214,22 +283,38 @@
           <span class="hint">Нажмите «Ударить», чтобы увидеть результат.</span>
         </div>
         <p class="hint">
-          <code>heroAttackBonus</code> и <code>heroDefenseBonus</code> участвуют в множителе атаки/защиты. Мастерства
-          <code>meleeOffenseBonusPercent</code> / <code>rangedOffenseBonusPercent</code> и
-          <code>defensiveArmorReductionPercent</code> теперь РАБОТАЮТ (нападение — по типу атаки выше; доспехи — только
-          против физической атаки). Заглушкой остался только <code>magicOffenseBonusPercent</code> (магия). Отдельный
-          интерфейс героев в этой форме не делаем — это шаг Б.
+          Ручные поля ниже и герои из боковых окон <b>складываются</b>, а не заменяют друг друга: например,
+          <code>heroAttackBonus</code>, введённый вручную, плюс атака героя дают общую прибавку к атаке. Навык
+          нападения/стрельбы применяется по типу атаки выше, доспехи — только против физической атаки. Заглушкой
+          остался только <code>magicOffenseBonusPercent</code> (магия). Ответку песочница вторым ударом не
+          считает: галочка <code>isRetaliation</code> лишь помечает текущий удар как ответный.
         </p>
-      </section>
+        </section>
+      </div>
 
-      <section>
-        <h2>Защитник</h2>
-        <div class="preset-row">
-          <label for="defender-preset">Выбрать юнита (поля потом можно править вручную)</label>
-          <select id="defender-preset"></select>
-        </div>
-        <div id="defender-fields"></div>
-      </section>
+      <div class="col">
+        <section>
+          <h2>Защитник (юнит)</h2>
+          <div class="preset-row">
+            <label for="defender-preset">Выбрать юнита (поля потом можно править вручную)</label>
+            <select id="defender-preset"></select>
+          </div>
+          <div id="defender-fields"></div>
+        </section>
+
+        <section>
+          <h2>Герой защитника</h2>
+          <div class="row">
+            <label for="hero-defender-enabled">Герой участвует в бою</label>
+            <input id="hero-defender-enabled" type="checkbox" />
+          </div>
+          <fieldset class="hero-inputs" id="hero-defender-inputs" disabled>
+            <div id="hero-defender-stats"></div>
+            <div class="slot-title hint">Навыки — до 6, один навык только в одном слоте</div>
+            <div id="hero-defender-skills"></div>
+          </fieldset>
+        </section>
+      </div>
     </div>
 
     <script>
@@ -258,8 +343,37 @@
         { key: 'heroDefenseBonus', label: 'heroDefenseBonus (прямая прибавка к защите героя)' },
       ];
 
+      /** Hero stat fields. spellPower/knowledge are placeholders, so they are marked as such. */
+      const HERO_STATS = [
+        { key: 'attack', label: 'Атака' },
+        { key: 'defense', label: 'Защита' },
+        { key: 'spellPower', label: 'Сила магии (пока не влияет)' },
+        { key: 'knowledge', label: 'Знания (пока не влияет)' },
+      ];
+
+      /** Skill levels: 1 = basic, 2 = advanced, 3 = expert (server HeroLoadout). */
+      const SKILL_LEVELS = [
+        { value: 1, label: 'база' },
+        { value: 2, label: 'про' },
+        { value: 3, label: 'эксперт' },
+      ];
+
+      /** How many skill slots a hero has (must match MAX_HERO_SKILLS on the server). */
+      const HERO_SLOTS = 6;
+
+      /** Battle mode line, rebuilt from the two hero toggles. */
+      const MODE_LABELS = {
+        none: 'Режим: моб против моба',
+        attacker: 'Режим: PvE — герой атакующего против моба',
+        defender: 'Режим: PvE — моб против героя защитника',
+        both: 'Режим: PvP — герой против героя',
+      };
+
       /** Presets selected by default in each form. */
       const DEFAULT_PRESET_IDS = { attacker: 'antimage', defender: 'black_dragon' };
+
+      /** Skills from GET /debug/heroes; the "affectsAttackNow" flag is decided by the server. */
+      let heroSkills = [];
 
       /** Short element factory, so the code below stays readable. */
       function node(tag, text, className) {
@@ -293,6 +407,16 @@
         const response = await fetch('/debug/fixtures');
         if (!response.ok) {
           throw new Error('не удалось загрузить пресеты юнитов: HTTP ' + response.status);
+        }
+
+        return response.json();
+      }
+
+      /** The skill list for the hero panels. The server decides affectsAttackNow. */
+      async function loadHeroSkills() {
+        const response = await fetch('/debug/heroes');
+        if (!response.ok) {
+          throw new Error('не удалось загрузить навыки: HTTP ' + response.status);
         }
 
         return response.json();
@@ -405,6 +529,190 @@
         return raw === '' ? 0 : Number(raw);
       }
 
+      /* ------------------------------------------------------------------ *
+       * Hero panels.
+       *
+       * The browser only COLLECTS the form: which skills and levels mean what, and
+       * which effects reach the formula, all come from the server (/debug/heroes).
+       * No bonus arithmetic is duplicated here.
+       * ------------------------------------------------------------------ */
+
+      /** Builds one hero panel: 4 stat fields and 6 skill slots. */
+      function buildHeroPanel(role) {
+        const stats = document.getElementById('hero-' + role + '-stats');
+        HERO_STATS.forEach((field) => {
+          numberRow(stats, 'hero-' + role + '-' + field.key, field.label, 0);
+        });
+
+        const skillsBox = document.getElementById('hero-' + role + '-skills');
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          skillsBox.append(buildHeroSlot(role, index));
+        }
+
+        const toggle = document.getElementById('hero-' + role + '-enabled');
+        toggle.addEventListener('change', () => {
+          // A disabled fieldset greys everything out but keeps the values.
+          document.getElementById('hero-' + role + '-inputs').disabled = !toggle.checked;
+          refreshMode();
+        });
+
+        refreshSkillOptions(role);
+      }
+
+      /** One skill slot: skill dropdown + level dropdown + Russian description of the level. */
+      function buildHeroSlot(role, index) {
+        const slot = node('div', null, 'slot');
+        slot.append(node('div', 'Слот ' + (index + 1), 'slot-head'));
+
+        const skillSelect = node('select');
+        skillSelect.id = 'hero-' + role + '-skill-' + index;
+        const empty = node('option', '— пусто —');
+        empty.value = '';
+        skillSelect.append(empty);
+        heroSkills.forEach((skill) => {
+          const option = node('option', skill.name);
+          option.value = skill.id;
+          skillSelect.append(option);
+        });
+        slot.append(skillSelect);
+
+        const levelSelect = node('select');
+        levelSelect.id = 'hero-' + role + '-level-' + index;
+        SKILL_LEVELS.forEach((level) => {
+          const option = node('option', level.label);
+          option.value = String(level.value);
+          levelSelect.append(option);
+        });
+        levelSelect.disabled = true; // an empty slot is off
+        slot.append(levelSelect);
+
+        slot.append(node('div', null, 'slot-hint'));
+
+        skillSelect.addEventListener('change', () => {
+          refreshSkillOptions(role);
+          refreshHeroSlot(role, index);
+        });
+        levelSelect.addEventListener('change', () => refreshHeroSlot(role, index));
+
+        return slot;
+      }
+
+      /** Skill ids already taken by this hero (a skill may not sit in two slots). */
+      function usedSkillIds(role) {
+        const used = new Set();
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          const value = document.getElementById('hero-' + role + '-skill-' + index).value;
+          if (value) used.add(value);
+        }
+
+        return used;
+      }
+
+      /** Disables every skill option that is already used in another slot. */
+      function refreshSkillOptions(role) {
+        const used = usedSkillIds(role);
+
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          const select = document.getElementById('hero-' + role + '-skill-' + index);
+          const own = select.value;
+
+          for (let position = 1; position < select.options.length; position++) {
+            const option = select.options[position];
+            option.disabled = option.value !== own && used.has(option.value);
+          }
+        }
+      }
+
+      /** Shows the Russian description of the chosen level (plus a "not used yet" marker). */
+      function refreshHeroSlot(role, index) {
+        const skillSelect = document.getElementById('hero-' + role + '-skill-' + index);
+        const levelSelect = document.getElementById('hero-' + role + '-level-' + index);
+        const hint = skillSelect.parentElement.querySelector('.slot-hint');
+        const skillId = skillSelect.value;
+
+        if (!skillId) {
+          levelSelect.disabled = true;
+          hint.textContent = '';
+
+          return;
+        }
+
+        levelSelect.disabled = false;
+        const skill = heroSkills.find((item) => item.id === skillId);
+        if (!skill) {
+          hint.textContent = '';
+
+          return;
+        }
+
+        const level = Number(levelSelect.value);
+        const text = skill.levels[level - 1] || '';
+        hint.textContent = skill.affectsAttackNow
+          ? text
+          : text + ' — пока не влияет на resolveAttack';
+      }
+
+      /** Rebuilds the battle mode line from the two hero toggles. */
+      function refreshMode() {
+        const attacker = document.getElementById('hero-attacker-enabled').checked;
+        const defender = document.getElementById('hero-defender-enabled').checked;
+        const key = attacker && defender ? 'both' : attacker ? 'attacker' : defender ? 'defender' : 'none';
+
+        document.getElementById('battle-mode').textContent = MODE_LABELS[key];
+      }
+
+      /**
+       * Reads one hero panel into the server's HeroLoadout format, or null when the hero is
+       * switched off (a switched-off hero is simply not sent in the request).
+       * Throws on a duplicate skill, so no request goes out while the form is invalid.
+       */
+      function readHero(role) {
+        if (!document.getElementById('hero-' + role + '-enabled').checked) return null;
+
+        const skills = [];
+        const firstSlotOf = new Map();
+
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          const skillId = document.getElementById('hero-' + role + '-skill-' + index).value;
+          if (!skillId) continue;
+
+          if (firstSlotOf.has(skillId)) {
+            throw new Error(
+              'Герой: навык «' +
+                skillId +
+                '» выбран в слотах ' +
+                (firstSlotOf.get(skillId) + 1) +
+                ' и ' +
+                (index + 1) +
+                ' — один навык можно взять только один раз',
+            );
+          }
+          firstSlotOf.set(skillId, index);
+
+          skills.push({
+            skillId: skillId,
+            level: Number(document.getElementById('hero-' + role + '-level-' + index).value),
+          });
+        }
+
+        return {
+          stats: {
+            attack: readNumber('hero-' + role + '-attack'),
+            defense: readNumber('hero-' + role + '-defense'),
+            spellPower: readNumber('hero-' + role + '-spellPower'),
+            knowledge: readNumber('hero-' + role + '-knowledge'),
+          },
+          skills: skills,
+        };
+      }
+
+      /** True when this hero's block was actually included in the last request. */
+      function heroWasSent(role) {
+        if (!lastRequest) return false;
+
+        return Boolean(role === 'attacker' ? lastRequest.attackerHero : lastRequest.defenderHero);
+      }
+
       function readUnit(role) {
         const stat = (key) => readNumber(role + '-' + key);
         const stats = {
@@ -488,6 +796,14 @@
             defender: readUnit('defender'),
             context: readContext(),
           };
+
+          // A switched-off hero contributes no block at all — the old behaviour.
+          // readHero() throws on a duplicate skill, so nothing is sent while the form is invalid.
+          const attackerHero = readHero('attacker');
+          const defenderHero = readHero('defender');
+          if (attackerHero) body.attackerHero = attackerHero;
+          if (defenderHero) body.defenderHero = defenderHero;
+
           lastRequest = body;
 
           const response = await fetch('/debug/attack', {
@@ -506,6 +822,57 @@
         }
       }
 
+      /**
+       * The "Герои" block: what each hero contributed, what is stored but not applied, and
+       * the server notes. A switched-off hero simply says so.
+       */
+      function renderHeroes(target, result) {
+        target.append(node('div', 'Герои:', 'hint'));
+
+        const mods = result.aggregatedModifiers;
+
+        [
+          { role: 'attacker', label: 'Атакующий' },
+          { role: 'defender', label: 'Защитник' },
+        ].forEach((entry) => {
+          if (!heroWasSent(entry.role)) {
+            target.append(node('div', entry.label + ': выключен', 'hint'));
+
+            return;
+          }
+
+          const m = mods[entry.role];
+          target.append(node('div', entry.label + ':', 'hint'));
+
+          const table = node('table');
+          [
+            ['Атака', fmt(m.attackBonus)],
+            ['Защита', fmt(m.defenseBonus)],
+            ['Нападение', fmt(m.meleeOffenseBonusPercent) + '%'],
+            ['Стрельба', fmt(m.rangedOffenseBonusPercent) + '%'],
+            ['Броня', fmt(m.defensiveArmorReductionPercent) + '%'],
+            ['Удача', fmt(m.luckLevel)],
+            ['Мораль', fmt(m.moraleLevel)],
+          ].forEach((row) => {
+            const tr = node('tr');
+            tr.append(node('td', row[0]), node('td', row[1], 'value'));
+            table.append(tr);
+          });
+          target.append(table);
+
+          const unused = Object.keys(m.unused)
+            .filter((key) => m.unused[key] !== 0)
+            .map((key) => key + ': ' + fmt(m.unused[key]));
+          target.append(
+            node('div', 'Не применяется: ' + (unused.length ? unused.join(', ') : 'ничего'), 'hint'),
+          );
+
+          const heroNotes = node('ul', null, 'notes');
+          m.notes.forEach((note) => heroNotes.append(node('li', note)));
+          target.append(heroNotes);
+        });
+      }
+
       function render(result) {
         const target = document.getElementById('result');
 
@@ -515,6 +882,12 @@
         }
 
         const b = result.breakdown;
+
+        // "base (total)": the unit's own field, then what the formula really used.
+        const baseAndTotal = (base, total) =>
+          Number(base) === Number(total) ? fmt(total) : fmt(base) + ' (' + fmt(total) + ')';
+        const baseAttack = lastRequest ? lastRequest.attacker.stats.attack : '?';
+        const baseDefense = lastRequest ? lastRequest.defender.stats.defense : '?';
 
         // Stack roll shown unpacked: how much rolled per unit x how many units there are.
         // The roll itself is unchanged — this only formats the number for the eye.
@@ -553,6 +926,9 @@
           ['17. После морали', fmt(b.afterMoraleBonus)],
         ];
 
+        // Two context rows on top: the unit's own value and what the formula really used.
+        rows.unshift(['Защита защитника (база → итог)', baseAndTotal(baseDefense, b.effectiveDefense)]);
+        rows.unshift(['Атака атакующего (база → итог)', baseAndTotal(baseAttack, b.effectiveAttack)]);
 
         const table = node('table');
         rows.forEach((row) => {
@@ -564,6 +940,8 @@
 
         target.append(node('div', fmt(result.damageDealt), 'total'));
         target.append(node('div', 'ИТОГОВЫЙ УРОН (округление half up, минимум = minimumDamage из конфига)', 'hint'));
+
+        renderHeroes(target, result);
 
         // The stack model: how many units are left and how wounded the front one is.
         const maxUnitHp = lastRequest ? lastRequest.defender.stats.hp : '?';
@@ -620,14 +998,26 @@
           return;
         }
 
+        // Hero skills drive the hero panels. A failure here must not kill the whole page:
+        // the panels simply come up with no skills in the dropdown.
+        try {
+          heroSkills = await loadHeroSkills();
+        } catch (error) {
+          const target = document.getElementById('result');
+          target.innerHTML = '';
+          target.append(node('p', 'Не удалось загрузить навыки героев: ' + error.message, 'error'));
+        }
+
         ['attacker', 'defender'].forEach((role) => {
           const preset = fixtures.find((item) => item.id === DEFAULT_PRESET_IDS[role]) ?? fixtures[0];
           buildUnitForm(role, preset);
           buildPresetSelect(role, fixtures);
           document.getElementById(role + '-preset').value = preset.id;
+          buildHeroPanel(role);
         });
 
         buildContextForm();
+        refreshMode();
         document.getElementById('strike').addEventListener('click', strike);
         // Ctrl+Enter strikes too: handy while tweaking numbers.
         document.addEventListener('keydown', (event) => {

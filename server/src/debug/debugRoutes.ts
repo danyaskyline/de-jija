@@ -23,12 +23,13 @@ import type { AbilityTag, CombatUnit, UnitStats } from '@de-jija/shared';
 import {
   aggregateHeroModifiers,
   applyHeroModifiersToContext,
+  skillAffectsAttackNow,
   type HeroLoadout,
   type HeroModifiers,
 } from '../combat/heroModifiers';
 import { resolveAttack, type AttackContext } from '../combat/resolveAttack';
 import { getSkills } from '../combat/skills';
-import { combatFixtures, heroFixtures } from '../combat/testFixtures';
+import { combatFixtures } from '../combat/testFixtures';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -267,9 +268,20 @@ export function createDebugRouter(): Router {
     response.json(combatFixtures);
   });
 
-  // Preset heroes (stats + skills) for the sandbox (docs/decisions.md, 016).
+  // The skill list for the hero panels: id, Russian name, the three level descriptions and
+  // whether the skill actually reaches resolveAttack today. The "affectsAttackNow" flag is
+  // computed HERE, on the server, so the browser never keeps its own copy of the target list.
   router.get('/heroes', (_request, response) => {
-    response.json(heroFixtures);
+    const skills = getSkills();
+
+    response.json(
+      skills.skills.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        levels: skill.levels,
+        affectsAttackNow: skillAffectsAttackNow(skill),
+      })),
+    );
   });
 
   // Resolves one attack and returns the full breakdown: the tool behind the page.
