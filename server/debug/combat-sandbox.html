@@ -270,7 +270,8 @@
           </select>
         </div>
         <div class="row">
-          <label for="isMoraleBonusAttack">isMoraleBonusAttack — этот удар из-за доп. хода морали</label>
+          <label for="isMoraleBonusAttack">isMoraleBonusAttack — если отмечено, урон умножается на moraleBonusAttackMultiplier (×0.8)</label>
+          <!-- No "checked" attribute on purpose: the flag must be OFF when the page loads. -->
           <input id="isMoraleBonusAttack" type="checkbox" />
         </div>
         <div class="row">
@@ -283,11 +284,12 @@
           <span class="hint">Нажмите «Ударить», чтобы увидеть результат.</span>
         </div>
         <p class="hint">
-          Ручные поля ниже и герои из боковых окон <b>складываются</b>, а не заменяют друг друга: например,
-          <code>heroAttackBonus</code>, введённый вручную, плюс атака героя дают общую прибавку к атаке. Навык
-          нападения/стрельбы применяется по типу атаки выше, доспехи — только против физической атаки. Заглушкой
-          остался только <code>magicOffenseBonusPercent</code> (магия). Ответку песочница вторым ударом не
-          считает: галочка <code>isRetaliation</code> лишь помечает текущий удар как ответный.
+          Ручные бонусы из блока параметров и бонусы героев из боковых окон <b>складываются</b>, а не заменяют
+          друг друга. Отдельных полей для ручной прибавки к атаке и защите здесь нет: они идут из окон героев
+          (поля «Атака» и «Защита»), а сервер всё ещё принимает `heroAttackBonus` / `heroDefenseBonus` в API.
+          Навык нападения/стрельбы применяется по типу атаки выше, доспехи — только против физической атаки.
+          Заглушкой остался только <code>magicOffenseBonusPercent</code> (магия). Ответку песочница вторым
+          ударом не считает: галочка <code>isRetaliation</code> лишь помечает текущий удар как ответный.
         </p>
         </section>
       </div>
@@ -335,12 +337,22 @@
 
       const TAGS = ['NoRetaliation', 'AreaAttack', 'MagicImmune', 'MagicDamage', 'Piercing'];
 
-      /** Attack modifiers: they go into resolveAttack's context. */
+      /**
+       * Attack modifiers that go into resolveAttack's context. The hero attack/defense bonuses
+       * are NOT here on purpose: the hero windows already provide them, so a manual field
+       * would only duplicate them. The server API still accepts both.
+       */
       const CONTEXT_FIELDS = [
-        { key: 'flatDamageBonus', label: 'flatDamageBonus (единицы урона)' },
-        { key: 'percentDamageBonus', label: 'percentDamageBonus (%)' },
-        { key: 'heroAttackBonus', label: 'heroAttackBonus (прямая прибавка к атаке героя)' },
-        { key: 'heroDefenseBonus', label: 'heroDefenseBonus (прямая прибавка к защите героя)' },
+        {
+          key: 'flatDamageBonus',
+          label:
+            'flatDamageBonus — плоская прибавка к броску урона до всех множителей; пока вместо предметов',
+        },
+        {
+          key: 'percentDamageBonus',
+          label:
+            'percentDamageBonus — процентный множитель после навыков (20 = ×1.2); пока вместо предметов',
+        },
       ];
 
       /** Hero stat fields. spellPower/knowledge are placeholders, so they are marked as such. */
@@ -506,8 +518,13 @@
           numberRow(container, 'context-' + field.key, field.label, 0);
         });
 
+        // The deterministic rolls live in a COLLAPSED block and start empty every time the
+        // page loads. An empty field means "send nothing", so the real random is used.
+        const debugBox = node('details');
+        debugBox.append(node('summary', 'Отладка (детерминированный бросок)'));
+
         numberRow(
-          container,
+          debugBox,
           'context-fixedRandomValue',
           'Зафиксировать бросок урона (0..0.99, пусто = случайно)',
           '',
@@ -515,12 +532,14 @@
         );
 
         numberRow(
-          container,
+          debugBox,
           'context-fixedLuckRoll',
           'Зафиксировать бросок удачи (0..0.99, пусто = случайно)',
           '',
           'случайно',
         );
+
+        container.append(debugBox);
       }
 
       function readNumber(id) {
