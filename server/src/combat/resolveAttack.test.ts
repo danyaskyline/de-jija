@@ -21,7 +21,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { CombatUnit } from '@de-jija/shared';
+import type { CombatBonuses, CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules, type CombatRules } from './combatRules';
 import { clampLuckLevel, resolveAttack, roundDamage } from './resolveAttack';
@@ -52,6 +52,15 @@ function withStats(unit: CombatUnit, partial: Partial<CombatUnit['stats']>): Com
 /** Copy of a unit with a changed luck level. */
 function withLuck(unit: CombatUnit, luckLevel: number): CombatUnit {
   return { ...unit, luckLevel };
+}
+
+/**
+ * Copy of a unit with a changed bonus total. Bonused live on the COMBATANT (they were
+ * collected once when the battle was created), not in the attack context
+ * (docs/decisions.md, 018). The source unit is never modified.
+ */
+function withBonuses(unit: CombatUnit, bonuses: Partial<CombatBonuses>): CombatUnit {
+  return { ...unit, bonuses: { ...unit.bonuses, ...bonuses } };
 }
 
 describe('resolveAttack — pure combat resolution', () => {
@@ -173,11 +182,9 @@ describe('resolveAttack — pure combat resolution', () => {
   });
 
   it('8. flatDamageBonus is applied BEFORE the multiplier and percentDamageBonus AFTER it', () => {
-    const result = resolveAttack(swordsman, goblin, {
-      random: minRoll,
-      flatDamageBonus: 4,
-      percentDamageBonus: 50,
-    });
+    // Both bonuses now live on the ATTACKER (docs/decisions.md, 018).
+    const attacker = withBonuses(swordsman, { flatDamageBonus: 4, percentDamageBonus: 50 });
+    const result = resolveAttack(attacker, goblin, { random: minRoll });
 
     // roll 10 -> +4 = 14 -> *1.15 = 16.1 -> *1.5 = 24.15 -> floor 24
     expect(result.breakdown.stackRoll).toBe(10);
@@ -288,10 +295,9 @@ describe('resolveAttack — pure combat resolution', () => {
   });
 
   it('13. breakdown is complete and logically consistent for a fully modified attack', () => {
-    const result = resolveAttack(mage, swordsman, {
+    const attacker = withBonuses(mage, { flatDamageBonus: 2, percentDamageBonus: 10 });
+    const result = resolveAttack(attacker, swordsman, {
       random: minRoll,
-      flatDamageBonus: 2,
-      percentDamageBonus: 10,
       isMoraleBonusAttack: true,
     });
     const { breakdown } = result;
@@ -386,10 +392,12 @@ describe('resolveAttack — pure combat resolution', () => {
 
   it('15. magicOffenseBonusPercent is still a placeholder; melee/ranged/armor now apply', () => {
     // Magic mastery is the ONLY remaining placeholder: reported, never applied.
-    const withMagicStub = resolveAttack(swordsman, goblin, {
-      random: minRoll,
-      magicOffenseBonusPercent: 30,
-    });
+    // It is an attacker bonus now (docs/decisions.md, 018).
+    const withMagicStub = resolveAttack(
+      withBonuses(swordsman, { magicOffenseBonusPercent: 30 }),
+      goblin,
+      { random: minRoll },
+    );
     const plainAttack = resolveAttack(swordsman, goblin, { random: minRoll });
 
     expect(withMagicStub.damageDealt).toBe(plainAttack.damageDealt);
@@ -402,11 +410,11 @@ describe('resolveAttack — pure combat resolution', () => {
     ).toBe(true);
 
     // ...whereas the offense skill and armor are real now (see their dedicated tests).
-    const withOffense = resolveAttack(swordsman, goblin, {
-      random: minRoll,
-      meleeOffenseBonusPercent: 30,
-      defensiveArmorReductionPercent: 10,
-    });
+    const withOffense = resolveAttack(
+      withBonuses(swordsman, { meleeOffenseBonusPercent: 30 }),
+      withBonuses(goblin, { defensiveArmorReductionPercent: 10 }),
+      { random: minRoll },
+    );
     expect(withOffense.breakdown.offenseSkillPercentApplied).toBe(30);
     expect(withOffense.breakdown.armorReductionApplied).toBe(10);
     expect(withOffense.damageDealt).not.toBe(plainAttack.damageDealt);
@@ -487,7 +495,11 @@ describe('resolveAttack — pure combat resolution', () => {
       stackCount: 9,
     };
 
-    const result = resolveAttack(attacker, bigStack, { random: minRoll, flatDamageBonus: 50 });
+    const result = resolveAttack(
+      withBonuses(attacker, { flatDamageBonus: 50 }),
+      bigStack,
+      { random: minRoll },
+    );
 
     expect(result.damageDealt).toBe(950); // 900 rolled + 50 flat, x1.0
     expect(result.defenderHpAfter).toBe(50);
@@ -514,11 +526,15 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.retaliationTriggered).toBe(false);
   });
 
-  it('23. heroAttackBonus is added to the attack for the multiplier only (5 + 10 = 15)', () => {
+  it('23. bonuses.attackBonus is added to the attack for the multiplier only (5 + 10 = 15)', () => {
     const weakHero = withStats(swordsman, { attack: 5 }); // against goblin defense 3
 
     const withoutBonus = resolveAttack(weakHero, goblin, { random: minRoll });
-    const withBonus = resolveAttack(weakHero, goblin, { random: minRoll, heroAttackBonus: 10 });
+    const withBonus = resolveAttack(
+      withBonuses(weakHero, { attackBonus: 10 }),
+      goblin,
+      { random: minRoll },
+    );
 
     expect(withoutBonus.breakdown.effectiveAttack).toBe(5);
     expect(withoutBonus.breakdown.attackDefenseMultiplier).toBeCloseTo(1.1); // 1 + 0.05 * 2
@@ -530,8 +546,12 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(weakHero.stats.attack).toBe(5);
   });
 
-  it('24. heroDefenseBonus raises the defense used by the multiplier', () => {
-    const result = resolveAttack(swordsman, goblin, { random: minRoll, heroDefenseBonus: 10 });
+  it('24. bonuses.defenseBonus raises the defense used by the multiplier', () => {
+    const result = resolveAttack(
+      swordsman,
+      withBonuses(goblin, { defenseBonus: 10 }),
+      { random: minRoll },
+    );
 
     expect(result.breakdown.effectiveAttack).toBe(6);
     expect(result.breakdown.effectiveDefense).toBe(13); // 3 + 10
@@ -771,10 +791,11 @@ describe('principle: "+X%" is a separate factor, so it changes the damage by exa
     (multiplier) => {
       const { attacker, defender } = unitsForMultiplier(multiplier);
       const plain = resolveAttack(attacker, defender, { random: () => 0 });
-      const withOffense = resolveAttack(attacker, defender, {
-        random: () => 0,
-        meleeOffenseBonusPercent: 30,
-      });
+      const withOffense = resolveAttack(
+        withBonuses(attacker, { meleeOffenseBonusPercent: 30 }),
+        defender,
+        { random: () => 0 },
+      );
 
       expect(plain.breakdown.attackDefenseMultiplier).toBeCloseTo(multiplier);
       expect(plain.breakdown.afterAttackDefense).toBeCloseTo(100 * multiplier);
@@ -787,10 +808,11 @@ describe('principle: "+X%" is a separate factor, so it changes the damage by exa
   it('percentDamageBonus is a separate factor (x1.5 at +50%)', () => {
     const { attacker, defender } = unitsForMultiplier(1.0);
     const plain = resolveAttack(attacker, defender, { random: () => 0 });
-    const withPercent = resolveAttack(attacker, defender, {
-      random: () => 0,
-      percentDamageBonus: 50,
-    });
+    const withPercent = resolveAttack(
+      withBonuses(attacker, { percentDamageBonus: 50 }),
+      defender,
+      { random: () => 0 },
+    );
 
     expect(withPercent.breakdown.afterPercentBonus).toBeCloseTo(
       plain.breakdown.afterOffenseSkill * 1.5,
@@ -800,10 +822,11 @@ describe('principle: "+X%" is a separate factor, so it changes the damage by exa
   it('armor is a separate factor (x0.85 at 15%)', () => {
     const { attacker, defender } = unitsForMultiplier(1.0);
     const plain = resolveAttack(attacker, defender, { random: () => 0 });
-    const withArmor = resolveAttack(attacker, defender, {
-      random: () => 0,
-      defensiveArmorReductionPercent: 15,
-    });
+    const withArmor = resolveAttack(
+      attacker,
+      withBonuses(defender, { defensiveArmorReductionPercent: 15 }),
+      { random: () => 0 },
+    );
 
     expect(withArmor.breakdown.afterArmor).toBeCloseTo(plain.breakdown.afterLuck * 0.85);
   });
@@ -812,11 +835,11 @@ describe('principle: "+X%" is a separate factor, so it changes the damage by exa
 
 describe('offense skill: melee vs ranged, physical only', () => {
   it('melee uses meleeOffenseBonusPercent and reports the ranged one as not applied', () => {
-    const result = resolveAttack(swordsman, goblin, {
-      random: () => 0,
+    const attacker = withBonuses(swordsman, {
       meleeOffenseBonusPercent: 30,
       rangedOffenseBonusPercent: 50,
     });
+    const result = resolveAttack(attacker, goblin, { random: () => 0 });
 
     expect(result.breakdown.offenseSkillPercentApplied).toBe(30);
     expect(
@@ -827,12 +850,11 @@ describe('offense skill: melee vs ranged, physical only', () => {
   });
 
   it('ranged uses rangedOffenseBonusPercent and reports the melee one as not applied', () => {
-    const result = resolveAttack(swordsman, goblin, {
-      random: () => 0,
-      attackKind: 'ranged',
+    const attacker = withBonuses(swordsman, {
       meleeOffenseBonusPercent: 30,
       rangedOffenseBonusPercent: 50,
     });
+    const result = resolveAttack(attacker, goblin, { random: () => 0, attackKind: 'ranged' });
 
     expect(result.breakdown.offenseSkillPercentApplied).toBe(50);
     expect(
@@ -843,11 +865,11 @@ describe('offense skill: melee vs ranged, physical only', () => {
   });
 
   it('a magical attack gets NO offense skill and the note says so', () => {
-    const result = resolveAttack(mage, swordsman, {
-      random: () => 0,
+    const attacker = withBonuses(mage, {
       meleeOffenseBonusPercent: 30,
       rangedOffenseBonusPercent: 50,
     });
+    const result = resolveAttack(attacker, swordsman, { random: () => 0 });
 
     expect(result.breakdown.offenseSkillPercentApplied).toBe(0);
     expect(
@@ -861,20 +883,22 @@ describe('offense skill: melee vs ranged, physical only', () => {
 describe('armor: physical only', () => {
   it('reduces physical damage', () => {
     const plain = resolveAttack(swordsman, goblin, { random: () => 0 });
-    const armored = resolveAttack(swordsman, goblin, {
-      random: () => 0,
-      defensiveArmorReductionPercent: 20,
-    });
+    const armored = resolveAttack(
+      swordsman,
+      withBonuses(goblin, { defensiveArmorReductionPercent: 20 }),
+      { random: () => 0 },
+    );
 
     expect(armored.breakdown.armorReductionApplied).toBe(20);
     expect(armored.damageDealt).toBeLessThan(plain.damageDealt);
   });
 
   it('never touches a magical attack and reports it as not applied', () => {
-    const result = resolveAttack(mage, swordsman, {
-      random: () => 0,
-      defensiveArmorReductionPercent: 20,
-    });
+    const result = resolveAttack(
+      mage,
+      withBonuses(swordsman, { defensiveArmorReductionPercent: 20 }),
+      { random: () => 0 },
+    );
 
     expect(result.breakdown.armorReductionApplied).toBe(0);
     expect(
@@ -886,12 +910,73 @@ describe('armor: physical only', () => {
 });
 
 describe('luck level is clamped inside resolveAttack', () => {
-  it('unit luck (3) + context luckBonus (2) is clamped to 3 and noted', () => {
-    const lucky = withLuck(swordsman, 3);
-    const result = resolveAttack(lucky, goblin, { random: () => 0, luckBonus: 2 });
+  it('unit luck (3) + the combatant bonus (2) is clamped to 3 and noted', () => {
+    const lucky = withBonuses(withLuck(swordsman, 3), { luckLevel: 2 });
+    const result = resolveAttack(lucky, goblin, { random: () => 0 });
 
     expect(result.breakdown.luckLevel).toBe(3);
     expect(result.notes.some((note) => note.includes('luck level clamped from 5 to 3'))).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Bonuses live on the combatants (docs/decisions.md, 018). These tests check
+ * the END-TO-END path: build a combatant, then hit with it.
+ * -------------------------------------------------------------------------- */
+
+describe('bonuses of the combatants reach the strike by role', () => {
+  const weakHero = withStats(swordsman, { attack: 5 });
+
+  it("an attacker's attackBonus affects the multiplier and the defender's own is untouched", () => {
+    const attacker = withBonuses(weakHero, { attackBonus: 10 });
+    const result = resolveAttack(attacker, goblin, { random: minRoll });
+
+    // 5 + 10 = 15 vs defense 3 -> 1 + 0.05 * 12 = 1.6; roll 10 -> 16
+    expect(result.breakdown.effectiveAttack).toBe(15);
+    expect(result.breakdown.effectiveDefense).toBe(3);
+    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1.6);
+    expect(result.damageDealt).toBe(16);
+  });
+
+  it("a defenseBonus only helps the combatant that carries it", () => {
+    // Same defender bonus, but on the ATTACKER: it must not raise the goblin's defense.
+    const attacker = withBonuses(swordsman, { defenseBonus: 10 });
+    const result = resolveAttack(attacker, goblin, { random: minRoll });
+
+    expect(result.breakdown.effectiveDefense).toBe(3); // the plain goblin
+    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1.15);
+    expect(result.damageDealt).toBe(12);
+  });
+
+  it('a retaliation uses the bonuses of the combatant that answers', () => {
+    // The goblin answers: ITS OWN attack bonus counts, and the armor bonus is the
+    // victim's (armor always belongs to the side being hit).
+    const answerer = withBonuses(goblin, { attackBonus: 3 });
+    const victim = withBonuses(swordsman, {
+      defenseBonus: 4,
+      defensiveArmorReductionPercent: 20,
+    });
+    const result = resolveAttack(answerer, victim, { isRetaliation: true, random: minRoll });
+
+    // goblin attack 4 + 3 = 7 vs swordsman defense 6 + 4 = 10 -> 1 - 0.025 * 3 = 0.925
+    expect(result.breakdown.effectiveAttack).toBe(7);
+    expect(result.breakdown.effectiveDefense).toBe(10);
+    expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(0.925);
+    // roll 8 * 0.925 = 7.4, armor -20% -> 5.92 -> round half up 6
+    expect(result.breakdown.armorReductionApplied).toBe(20);
+    expect(result.damageDealt).toBe(6);
+  });
+
+  it('a unit without any bonuses is calculated exactly as before the transfer', () => {
+    const withoutBonuses = resolveAttack(swordsman, goblin, { random: minRoll });
+    const emptyBonuses = resolveAttack(
+      withBonuses(swordsman, {}),
+      withBonuses(goblin, {}),
+      { random: minRoll },
+    );
+
+    expect(emptyBonuses.damageDealt).toBe(withoutBonuses.damageDealt);
+    expect(emptyBonuses.breakdown).toEqual(withoutBonuses.breakdown);
   });
 });
 

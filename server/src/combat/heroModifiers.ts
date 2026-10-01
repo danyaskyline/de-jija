@@ -4,14 +4,17 @@
  *
  * Flow:
  *   HeroLoadout (stats + skills)  --aggregateHeroModifiers-->  HeroModifiers
- *   HeroModifiers (attacker & defender)  --applyHeroModifiersToContext-->  AttackContext
+ *   HeroModifiers  --buildCombatant-->  CombatUnit.bonuses  (server/src/combat/combatant.ts)
+ *
+ * The aggregator only describes WHAT the hero brings; it does not touch the combat
+ * formula and does not build an attack context any more (docs/decisions.md, 018).
  *
  * A skill never touches the formula until its target is supported by resolveAttack; the
  * aggregate reports everything it could not use in `unused` / `notes`, so a stored number
  * can never be mistaken for a working bonus (docs/combat-formula.md).
  */
 
-import { clampLuckLevel, type AttackContext } from './resolveAttack';
+import { clampLuckLevel } from './resolveAttack';
 import { findSkill, type Skill, type SkillTarget, type SkillsData } from './skills';
 
 /** A hero's base stats. spellPower and knowledge are placeholders for a future spell system. */
@@ -34,7 +37,7 @@ export type HeroLoadout = {
   skills: HeroSkillSlot[];
 };
 
-/** Everything a hero contributes to one attack, already aggregated and clamped. */
+/** Everything a hero brings to a battle, already aggregated and clamped. */
 export type HeroModifiers = {
   attackBonus: number;
   defenseBonus: number;
@@ -254,49 +257,4 @@ function addUnusedNotes(unused: HeroModifiers['unused'], notes: string[]): void 
   if (unused.knowledge !== 0) {
     notes.push(`knowledge=${unused.knowledge}: reserved for the future spell system — not applied`);
   }
-}
-
-/**
- * Builds the AttackContext for ONE side of a battle from the two heroes' modifiers.
- *
- * The bonuses are resolved BY ROLE (docs/decisions.md, 016):
- *   - the ATTACKER's hero provides attack, melee/ranged offense and luck;
- *   - the DEFENDER's hero provides defense and armor.
- *
- * Sources ADD UP instead of overwriting each other (docs/decisions.md, 017): whatever is
- * already in `baseContext` (the manual fields of the sandbox, later items and buffs) is kept
- * and the hero's value is added on top. A hero must never silently cancel a bonus that came
- * from somewhere else.
- *
- * Because the bonuses are role-based, a retaliation needs no special block: it is a full
- * re-invocation with the roles swapped, so the caller simply passes the two modifier
- * objects the other way round (attackerMods <-> defenderMods).
- */
-export function applyHeroModifiersToContext(
-  baseContext: AttackContext,
-  attackerMods: HeroModifiers,
-  defenderMods: HeroModifiers,
-): AttackContext {
-  /** base value from the context + value from the hero. */
-  const add = (fromBase: number | undefined, fromHero: number): number => (fromBase ?? 0) + fromHero;
-
-  return {
-    ...baseContext,
-    heroAttackBonus: add(baseContext.heroAttackBonus, attackerMods.attackBonus),
-    heroDefenseBonus: add(baseContext.heroDefenseBonus, defenderMods.defenseBonus),
-    meleeOffenseBonusPercent: add(
-      baseContext.meleeOffenseBonusPercent,
-      attackerMods.meleeOffenseBonusPercent,
-    ),
-    rangedOffenseBonusPercent: add(
-      baseContext.rangedOffenseBonusPercent,
-      attackerMods.rangedOffenseBonusPercent,
-    ),
-    defensiveArmorReductionPercent: add(
-      baseContext.defensiveArmorReductionPercent,
-      defenderMods.defensiveArmorReductionPercent,
-    ),
-    // Luck is already additive; the total is clamped because luck has a -3..3 range.
-    luckBonus: clampLuckLevel((baseContext.luckBonus ?? 0) + attackerMods.luckLevel),
-  };
 }

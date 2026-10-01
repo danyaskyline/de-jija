@@ -62,6 +62,39 @@ export type AbilityTag =
   | 'Piercing'
   | 'MagicDamage';
 
+/**
+ * Every bonus a combatant brings to its own attacks, in total.
+ *
+ * It is the TOTAL from the hero (stats + skills + items + set bonuses + buffs);
+ * built once at battle creation by `buildCombatant` (server/src/combat/combatant.ts)
+ * and stored on the combatant, so resolveAttack never gathers anything itself.
+ * A missing field (or a missing `bonuses` object) means 0.
+ */
+export type CombatBonuses = {
+  /** Flat bonus to this combatant's attack. */
+  attackBonus: number;
+  /** Flat bonus to this combatant's defense. */
+  defenseBonus: number;
+  /** Extra damage in percent for a MELEE attack. */
+  meleeOffenseBonusPercent: number;
+  /** Extra damage in percent for a RANGED attack. */
+  rangedOffenseBonusPercent: number;
+  /** Reduces incoming PHYSICAL damage by this percent. */
+  defensiveArmorReductionPercent: number;
+  /** Luck levels the hero adds on top of the unit's own luckLevel (-3..3). */
+  luckLevel: number;
+  /** Flat damage added to the stack roll BEFORE the attack/defense multiplier. */
+  flatDamageBonus: number;
+  /** Percent damage applied AFTER the attack/defense multiplier (50 means +50%). */
+  percentDamageBonus: number;
+  /**
+   * TODO (placeholder): extra damage for MAGIC attacks. No logic is implemented
+   * for it — a non-zero value is reported in `notes` and never applied
+   * (docs/decisions.md, 016).
+   */
+  magicOffenseBonusPercent: number;
+};
+
 /** A unit as the battle engine sees it: plain data, no behaviour. */
 export type CombatUnit = {
   id: string;
@@ -89,4 +122,10 @@ export type CombatUnit = {
    * Optional — omitted means a stack of 1.
    */
   stackCount?: number;
+  /**
+   * Total bonuses of this combatant, collected ONCE when the battle is created
+   * (see CombatBonuses and server/src/combat/combatant.ts). resolveAttack only
+   * READS these numbers. Optional: a missing object or field means 0.
+   */
+  bonuses?: Partial<CombatBonuses>;
 };

@@ -18,11 +18,11 @@ import { fileURLToPath } from 'node:url';
 
 import express, { type Router } from 'express';
 
-import type { AbilityTag, CombatUnit, UnitStats } from '@de-jija/shared';
+import type { AbilityTag, CombatBonuses, CombatUnit, UnitStats } from '@de-jija/shared';
 
+import { buildCombatant } from '../combat/combatant';
 import {
   aggregateHeroModifiers,
-  applyHeroModifiersToContext,
   skillAffectsAttackNow,
   type HeroLoadout,
   type HeroModifiers,
@@ -51,23 +51,51 @@ const KNOWN_TAGS: readonly AbilityTag[] = [
   'MagicDamage',
 ];
 
-/** Numbers the sandbox may pass as attack modifiers. */
-const CONTEXT_NUMBER_FIELDS = [
+/**
+ * Manual bonus numbers the sandbox may send, split BY ROLE — the same way the heroes
+ * are split: attack, offense, luck and damage bonuses come from the attacking side,
+ * defense and armor from the defending side. They end up in the combatants'
+ * `bonuses` (buildCombatant), not in the attack context.
+ */
+const ATTACKER_BONUS_FIELDS = [
   'flatDamageBonus',
   'percentDamageBonus',
-  'fixedLuckRoll',
   'heroAttackBonus',
-  'heroDefenseBonus',
   'meleeOffenseBonusPercent',
   'rangedOffenseBonusPercent',
   'magicOffenseBonusPercent',
+] as const;
+
+/** The same list for the defending side: `heroAttackBonus` is named `attackBonus` there. */
+const DEFENDER_BONUS_FIELDS = [
+  'heroDefenseBonus',
   'defensiveArmorReductionPercent',
 ] as const;
+
+/** Maps a manual request field to the bonus field of the combatant. */
+const ATTACKER_BONUS_NAMES: Record<(typeof ATTACKER_BONUS_FIELDS)[number], keyof CombatBonuses> =
+  {
+    flatDamageBonus: 'flatDamageBonus',
+    percentDamageBonus: 'percentDamageBonus',
+    heroAttackBonus: 'attackBonus',
+    meleeOffenseBonusPercent: 'meleeOffenseBonusPercent',
+    rangedOffenseBonusPercent: 'rangedOffenseBonusPercent',
+    magicOffenseBonusPercent: 'magicOffenseBonusPercent',
+  };
+
+const DEFENDER_BONUS_NAMES: Record<(typeof DEFENDER_BONUS_FIELDS)[number], keyof CombatBonuses> = {
+  heroDefenseBonus: 'defenseBonus',
+  defensiveArmorReductionPercent: 'defensiveArmorReductionPercent',
+};
 
 type ParsedRequest = {
   attacker: CombatUnit;
   defender: CombatUnit;
   context: AttackContext;
+  /** Manual (non-hero) bonuses of the attacking side, added on top of the hero's ones. */
+  attackerBonuses: Partial<CombatBonuses>;
+  /** Manual (non-hero) bonuses of the defending side. */
+  defenderBonuses: Partial<CombatBonuses>;
   /** Optional hero blocks (docs/decisions.md, 016); absent means "no hero". */
   attackerHero?: HeroLoadout;
   defenderHero?: HeroLoadout;
@@ -129,21 +157,50 @@ function parseUnit(value: unknown, role: string): { unit: CombatUnit } | ParseEr
   };
 }
 
-/** Reads the attack modifiers; unknown or non-numeric values are ignored. */
-function parseContext(value: unknown): AttackContext {
-  if (typeof value !== 'object' || value === null) {
-    return {};
+/**
+ * Reads the hit context (what THIS strike is) and the manual bonus numbers, which
+ * are returned separately BY ROLE and later become the combatants' `bonuses`.
+ * Unknown or non-numeric values are ignored.
+ */
+function parseContext(value: unknown): {
+  context: AttackContext;
+  attackerBonuses: Partial<CombatBonuses>;
+  defenderBonuses: Partial<CombatBonuses>;
+} {
+  const attackerBonuses: Partial<CombatBonuses> = {};
+  const defenderBonuses: Partial<CombatBonuses> = {};
+
+  if (typeof value === 'object' && value !== null) {
+    const raw = value as Record<string, unknown>;
+
+    const readBonus = (field: string): number | undefined =>
+      typeof raw[field] === 'number' && Number.isFinite(raw[field] as number) &&
+        raw[field] !== 0
+        ? (raw[field] as number)
+        : undefined;
+
+    for (const field of ATTACKER_BONUS_FIELDS) {
+      const bonus = readBonus(field);
+
+      if (bonus !== undefined) {
+        attackerBonuses[ATTACKER_BONUS_NAMES[field]] = bonus;
+      }
+    }
+    for (const field of DEFENDER_BONUS_FIELDS) {
+      const bonus = readBonus(field);
+
+      if (bonus !== undefined) {
+        defenderBonuses[DEFENDER_BONUS_NAMES[field]] = bonus;
+      }
+    }
   }
 
-  const raw = value as Record<string, unknown>;
   const context: AttackContext = {};
+  const raw = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>;
 
-  for (const field of CONTEXT_NUMBER_FIELDS) {
-    const fieldValue = raw[field];
-
-    if (typeof fieldValue === 'number' && Number.isFinite(fieldValue) && fieldValue !== 0) {
-      context[field] = fieldValue;
-    }
+  // Zero used to be treated as "not sent" by the old parser — keep that contract.
+  if (typeof raw.fixedLuckRoll === 'number' && Number.isFinite(raw.fixedLuckRoll) && raw.fixedLuckRoll !== 0) {
+    context.fixedLuckRoll = raw.fixedLuckRoll;
   }
 
   if (raw.attackKind === 'melee' || raw.attackKind === 'ranged') {
@@ -163,7 +220,7 @@ function parseContext(value: unknown): AttackContext {
     context.random = () => fixedRoll;
   }
 
-  return context;
+  return { context, attackerBonuses, defenderBonuses };
 }
 
 /**
@@ -241,10 +298,14 @@ function parseRequestBody(body: unknown): ParsedRequest | ParseError {
     return defenderHero;
   }
 
+  const hit = parseContext(raw.context);
+
   return {
     attacker: attacker.unit,
     defender: defender.unit,
-    context: parseContext(raw.context),
+    context: hit.context,
+    attackerBonuses: hit.attackerBonuses,
+    defenderBonuses: hit.defenderBonuses,
     attackerHero: attackerHero ? attackerHero.loadout : undefined,
     defenderHero: defenderHero ? defenderHero.loadout : undefined,
   };
@@ -293,18 +354,39 @@ export function createDebugRouter(): Router {
       return;
     }
 
-    let context = parsed.context;
+    // The combatants are built HERE, once per request: the hero (stats + skills) and
+    // the manual bonus numbers of the sandbox are merged into each combatant's
+    // `bonuses` (docs/decisions.md, 018). resolveAttack then only reads them.
+    const context = parsed.context;
+    let attackerCombatant = buildCombatant(
+      parsed.attacker,
+      null,
+      parsed.attackerBonuses,
+    );
+    let defenderCombatant = buildCombatant(
+      parsed.defender,
+      null,
+      parsed.defenderBonuses,
+    );
     let aggregatedModifiers: { attacker: HeroModifiers; defender: HeroModifiers } | undefined;
 
-    // Optional hero blocks: when given, the heroes' modifiers are folded into the context
-    // (attack/offense/luck from the attacker's hero, defense/armor from the defender's).
+    // Optional hero blocks: a hero without a block simply means "no hero" (all zeros).
     if (parsed.attackerHero || parsed.defenderHero) {
       try {
         const skills = getSkills();
         const attackerMods = aggregateHeroModifiers(parsed.attackerHero, skills);
         const defenderMods = aggregateHeroModifiers(parsed.defenderHero, skills);
 
-        context = applyHeroModifiersToContext(context, attackerMods, defenderMods);
+        attackerCombatant = buildCombatant(
+          parsed.attacker,
+          attackerMods,
+          parsed.attackerBonuses,
+        );
+        defenderCombatant = buildCombatant(
+          parsed.defender,
+          defenderMods,
+          parsed.defenderBonuses,
+        );
         aggregatedModifiers = { attacker: attackerMods, defender: defenderMods };
       } catch (error) {
         response
@@ -315,10 +397,10 @@ export function createDebugRouter(): Router {
     }
 
     console.log(
-      `[debug] attack: ${parsed.attacker.name} (${parsed.attacker.tags.join(', ') || 'no tags'}) -> ${parsed.defender.name}`,
+      `[debug] attack: ${attackerCombatant.name} (${attackerCombatant.tags.join(', ') || 'no tags'}) -> ${defenderCombatant.name}`,
     );
 
-    const result = resolveAttack(parsed.attacker, parsed.defender, context);
+    const result = resolveAttack(attackerCombatant, defenderCombatant, context);
 
     response.json(aggregatedModifiers ? { ...result, aggregatedModifiers } : result);
   });

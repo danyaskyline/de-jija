@@ -17,7 +17,9 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 
 - `rules` по умолчанию — коэффициенты баланса, загруженные в память при старте сервера.
 - `context.random` инжектится, поэтому тесты полностью детерминированы.
-- `context` — все бонусы героя и предметов на один удар; объекты юнитов никогда не мутируются.
+- `context` — только сам удар: `isRetaliation`, `random`, `fixedLuckRoll`, `isMoraleBonusAttack`,
+  `attackKind`. Все бонусы лежат на бойцах (`CombatUnit.bonuses`, см. «Как бонусы попадают в бой»),
+  поэтому формула ничего не собирает, а только читает готовые числа.
 
 ## Итоговая формула
 
@@ -41,22 +43,53 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 | 1 | Теги атакующего | `MagicDamage` = магическая атака, иначе физическая | — | юнит (`AbilityTag`) | сделано (упрощённая абстракция, не система заклинаний) | `2. mage (MagicDamage) attacks the dragon…` |
 | 2 | Теги защитника | `MagicImmune` + магическая атака → полный блок, урон 0 | — | юнит (`AbilityTag`) | сделано (упрощённая абстракция) | `2. mage (MagicDamage) attacks the dragon…` |
 | 3 | Бросок урона стека | `uniform`: один целый бросок из `damageMin×N … damageMax×N` включительно. `sampled`: `k = min(N, damageRollSamples)` бросков `damageMin..damageMax`, сумма × `N/k` | `damageRollMode`, `damageRollSamples` | юнит (`damageMin`, `damageMax`, `stackCount`) | сделано (оба режима) | `damage roll mode (uniform is the default)`, `stack damage roll — limited samples with scaling` |
-| 4 | Flat-бонус | `+ flatDamageBonus` (единицы урона) | — | герой/предметы (пока ручной ввод) | сделано | `8. flatDamageBonus is applied BEFORE the multiplier…` |
-| 5 | Множитель атака/защита | `attack > defense`: `min(cap, 1 + perPoint/100 × (attack−defense))`, потолок ×4.0. `attack < defense`: `max(floor, 1 − penPerPoint/100 × (defense−attack))`, пол ×0.3. равны: ×1 | `attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`, `defensePenaltyFloorPercent` | юнит (`attack`, `defense`) + герой (`heroAttackBonus`, `heroDefenseBonus`) | сделано | `9.`, `10.`, `23.`, `24.`, `hero attack/defense through the context…` |
-| 6 | Навык нападения / стрельбы | `× (1 + навык/100)`; для ближней — `offense`, для дальней — `archery`; на магической атаке не применяется | — | `config/skills.json` → `offense` / `archery` | сделано | `offense skill: melee vs ranged, physical only` |
-| 7 | Процентный бонус | `× (1 + percentDamageBonus/100)` | — | герой/предметы (пока ручной ввод) | сделано | `8.` |
-| 8 | Удача | не множитель, а **шанс**: шанс `luckChanceByLevel[|luckLevel|]`; при срабатывании `×1.5` (плюс) или `×0.75` (минус) | `luckChanceByLevel`, `luckPositiveMultiplier`, `luckNegativeMultiplier` | юнит (`luckLevel`) + навык `luck` (`AttackContext.luckBonus`) | сделано; уровень обрезан до −3..+3 | `11.`, `11b.`–`11e.`, `luck level is clamped inside resolveAttack` |
-| 9 | Доспехи | `× (1 − доспехи/100)`; **только против физической атаки** | — | `config/skills.json` → `armorer` | сделано | `armor: physical only` |
+| 4 | Flat-бонус | `+ flatDamageBonus` (единицы урона) | — | с бойца (`bonuses` атакующего, собранного при создании боя) | сделано | `8. flatDamageBonus is applied BEFORE the multiplier…` |
+| 5 | Множитель атака/защита | `attack > defense`: `min(cap, 1 + perPoint/100 × (attack−defense))`, потолок ×4.0. `attack < defense`: `max(floor, 1 − penPerPoint/100 × (defense−attack))`, пол ×0.3. равны: ×1 | `attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`, `defensePenaltyFloorPercent` | юнит (`stats.attack`, `stats.defense`) + с бойцов (`bonuses.attackBonus` атакующего, `bonuses.defenseBonus` защитника) | сделано | `9.`, `10.`, `23.`, `24.`, `bonuses.attackBonus is added to the attack…` |
+| 6 | Навык нападения / стрельбы | `× (1 + навык/100)`; для ближней — `offense`, для дальней — `archery`; на магической атаке не применяется | — | с бойца (`bonuses.meleeOffenseBonusPercent` / `rangedOffenseBonusPercent` атакующего; изначально — `config/skills.json` → `offense` / `archery`) | сделано | `offense skill: melee vs ranged, physical only` |
+| 7 | Процентный бонус | `× (1 + percentDamageBonus/100)` | — | с бойца (`bonuses.percentDamageBonus` атакующего; сейчас ручной ввод, потом предметы) | сделано | `8.` |
+| 8 | Удача | не множитель, а **шанс**: шанс `luckChanceByLevel[|luckLevel|]`; при срабатывании `×1.5` (плюс) или `×0.75` (минус) | `luckChanceByLevel`, `luckPositiveMultiplier`, `luckNegativeMultiplier` | юнит (`luckLevel`) + с бойца (`bonuses.luckLevel` атакующего; изначально — навык `luck` героя); сумма обрезается до −3..+3 один раз | сделано; уровень обрезан до −3..+3 | `11.`, `11b.`–`11e.`, `luck level is clamped inside resolveAttack` |
+| 9 | Доспехи | `× (1 − доспехи/100)`; **только против физической атаки** | — | с бойца (`bonuses.defensiveArmorReductionPercent` защитника; изначально — `config/skills.json` → `armorer`) | сделано | `armor: physical only` |
 | 10 | Мораль | обычный удар не ослабляется; только удар «благодаря» доп. ходу морали `× moraleBonusAttackMultiplier` | `moraleBonusAttackMultiplier` | только флаг `isMoraleBonusAttack` | сделано частично: навык `leadership` (мораль) в урон **не входит**, это система очереди ходов | `12. morale only touches a hit that IS a morale extra attack` |
 | 11 | Округление и минимум | `roundDamage(x) = Math.round(x + 1e-9)`, затем не меньше минимума | `minimumDamage` | конфиг | сделано | `roundDamage — one "mathematical" rounding at the very end`, `7. damage never falls below MIN_DAMAGE…` |
 | 12 | Применение к пулу HP | `defenderHpAfter = max(0, currentHp − damageDealt)`; `stackAliveCount = ceil(остаток / stats.hp)`; `frontUnitHp = остаток − (живых−1) × stats.hp` | — | юнит (`currentHp`, `stats.hp`, `stackCount`) | сделано | `20.`, `21.`, `22.` |
-| 13 | Ответка | полный повторный вызов `resolveAttack` с переставленными ролями и `isRetaliation = true`; бонусы героя берутся по ролям, поэтому берутся бонусы **отвечающего** героя | — | оба героя | сделано | `3b.`, `17.`, `25.`, `retaliation with hero bonuses (point 0b / decisions 016)` |
+| 13 | Ответка | полный повторный вызов `resolveAttack` с переставленными ролями и `isRetaliation = true`; бонусы берутся с бойцов, поэтому ответка автоматически получает бонусы **отвечающего** бойца | — | оба бойца | сделано | `3b.`, `17.`, `25.`, `a retaliation uses the bonuses of the combatant that answers` |
 
 `breakdown` содержит каждое промежуточное значение (`stackRoll`, `afterFlatBonus`,
 `attackDefenseMultiplier`, `afterAttackDefense`, `offenseSkillPercentApplied`,
 `afterOffenseSkill`, `afterPercentBonus`, `afterLuck`, `armorReductionApplied`, `afterArmor`,
 `afterMoraleBonus`, `finalDamage` и др.) — всё **без округления**, округление одно в самом конце.
 `notes` перечисляет всё, что сработало и что намеренно не применилось.
+
+## Как бонусы попадают в бой (docs/decisions.md, 018)
+
+**Источник силы один — герой.** Сейчас это его статы и навыки; позже к этому же списку добавятся
+предметы, сеты и баффы.
+
+**Бонусы собираются ОДИН РАЗ при создании боя и лежат на самом бойце.** Тип `CombatBonuses`
+(`shared`) — это итог по всем источникам, а `CombatUnit.bonuses` — поле, где он хранится.
+Сборка происходит в одной функции: `buildCombatant(unit, heroModifiers, extraBonuses)`
+(`server/src/combat/combatant.ts`). Она возвращает **копию** юнита с заполненным `bonuses` —
+исходный объект не мутируется. Пропущенное поле (и отсутствие героя) = 0.
+
+**`resolveAttack` ничего не собирает.** Он только читает готовые числа: с атакующего —
+`attackBonus`, навык нападения по `attackKind`, `luckLevel`, `flatDamageBonus`,
+`percentDamageBonus`, `magicOffenseBonusPercent` (заглушка); с защитника — `defenseBonus` и
+`defensiveArmorReductionPercent`. В `AttackContext` остались только поля самого удара.
+Поэтому формула ничего не знает про героев, предметы и песочницу.
+
+**Правила стакинга источников** (герой + `extraBonuses`):
+
+- `attackBonus`, `defenseBonus`, `flatDamageBonus`, `meleeOffenseBonusPercent`,
+  `rangedOffenseBonusPercent`, `defensiveArmorReductionPercent` — **складываются**;
+- `percentDamageBonus` — **перемножаются**: итог% = `((1 + a/100) × (1 + b/100) − 1) × 100`,
+  поэтому два источника по +10% дают +21%, а не +20% (тот же принцип, что у отдельных
+  множителей формулы);
+- `luckLevel` — складывается и **один раз** обрезается до ±3 (факт обрезки пишется в `notes`).
+  Собственная удача юнита (`CombatUnit.luckLevel`) в эту сумму не входит: формула складывает
+  её отдельно и обрезает итог один раз, как раньше.
+
+**Ответка** — полный повторный расчёт с переставленными ролями и `isRetaliation: true`, от
+нового состояния. Отдельного «блока для ответки» не нужно: у отвечающего бойца свои бонусы.
 
 ## Что видит игрок (принципы 1–5)
 
@@ -104,8 +137,8 @@ penalty is floored at ×0.3».
 - **справа** — юнит-защитник, под ним окно героя защитника.
 
 Отдельных полей для ручной прибавки к атаке и защите в форме нет — они идут из окон героев
-(«Атака» и «Защита»); серверный `AttackContext` при этом по-прежнему принимает
-`heroAttackBonus` / `heroDefenseBonus`.
+(«Атака» и «Защита»); сервер принимает те же поля в запросе, но раскладывает их по ролям в
+`bonuses` бойцов.
 
 Окно героя: тумблер «Герой участвует в бою» (по умолчанию выключен), четыре стата (Атака, Защита,
 Сила магии, Знания — последние помечены «пока не влияет») и 6 слотов навыков. В слоте выбираются
@@ -203,9 +236,12 @@ penalty is floored at ×0.3».
   (`water_magic`, `air_magic`, `earth_magic`, `fire_magic`) пока без числовых эффектов — только описания.
 - `server/src/combat/skills.ts` — загрузчик навыков (читается один раз при старте, валидируется).
 - `server/src/combat/heroModifiers.ts` — агрегатор героя: превращает набор статов и навыков в один
-  объект модификаторов и собирает `AttackContext`. Удача и атака берутся от героя атакующего,
-  защита и броня — от героя защитника, поэтому ответка (переставленные роли) получает бонусы
-  отвечающего героя без отдельного блока. Отсутствие героя = все нули.
+  объект модификаторов. Дальше этот объект уходит в `buildCombatant`, который раскладывает его по
+  бойцам (см. «Как бонусы попадают в бой»); сама функция в формулу не лезет. Отсутствие героя = все
+  нули.
+- `server/src/combat/combatant.ts` — единственное место сборки бонусов: `buildCombatant(unit,
+  heroModifiers | null, extraBonuses?)` возвращает копию бойца с готовым `bonuses`
+  (docs/decisions.md, 018).
 
 ## Правило проекта
 

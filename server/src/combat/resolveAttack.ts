@@ -15,15 +15,23 @@
  *                              "sampled": k = min(N, damageRollSamples) per-unit rolls,
  *                              summed and scaled by N/k. Not rounded here.
  *   4. flatDamageBonus        — flat damage, applied BEFORE the multiplier
- *   5. attack/defense factor  — +heroAttackBonus / -heroDefenseBonus, then config caps
+ *   5. attack/defense factor  — +attacker.bonuses.attackBonus /
+ *                               -defender.bonuses.defenseBonus, then config caps
  *   6. offense skill          — melee/ranged hero skill, PHYSICAL attacks only
  *   7. percentDamageBonus     — applied AFTER the multiplier
  *   8. luck                   — a CHANCE to trigger, not a smooth multiplier
- *   9. armor                  — defensiveArmorReductionPercent, PHYSICAL attacks only
+ *   9. armor                  — defender.bonuses.defensiveArmorReductionPercent,
+ *                              PHYSICAL attacks only
  *  10. morale bonus attack    — only when THIS hit is a morale-driven extra attack
  *  11. round half up          — roundDamage(), then never below rules.minimumDamage
  *  12. apply to the stack HP pool
  *  13. retaliation flag
+ *
+ * WHERE the bonuses come from: the combatants themselves. Every combatant is
+ * built ONCE when the battle starts (server/src/combat/combatant.ts) and carries
+ * the total `CombatBonuses` from the hero, its items and its buffs. This function
+ * only READS those numbers — it never collects anything itself, and the context
+ * carries nothing but the facts of THIS hit (docs/decisions.md, 018).
  *
  * Each percent bonus is a SEPARATE factor, so "+X%" always changes the damage by exactly
  * that share and the order of factors does not matter (docs/decisions.md, 015).
@@ -37,10 +45,18 @@
  * silently ignored. Balance numbers live in config/combat-rules.json, loaded once.
  */
 
-import type { AbilityTag, CombatUnit } from '@de-jija/shared';
+import type { AbilityTag, CombatBonuses, CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, type CombatRules } from './combatRules';
 
+/**
+ * Everything that describes THIS HIT and nothing else.
+ *
+ * All bonuses (attack, defense, offense, armor, luck, flat/percent damage) live
+ * on the combatants themselves (`CombatUnit.bonuses`, collected once at battle
+ * creation — see server/src/combat/combatant.ts). This context carries only the
+ * facts of the single blow being resolved.
+ */
 export type AttackContext = {
   /** True when this attack is itself a retaliation (stops endless counter-chains). */
   isRetaliation?: boolean;
@@ -51,56 +67,18 @@ export type AttackContext = {
    * deterministically. It does NOT affect the damage roll.
    */
   fixedLuckRoll?: number;
-
-  /** Flat damage added to the stack roll BEFORE the attack/defense multiplier. */
-  flatDamageBonus?: number;
-  /** Percent damage applied AFTER the attack/defense multiplier (50 means +50%). */
-  percentDamageBonus?: number;
   /**
    * True ONLY when this hit is the result of a morale-driven extra attack.
    * Morale itself is a turn-order system (extra attack or skipped turn) and does
    * NOT weaken ordinary attacks, so an ordinary hit has no morale modifier at all.
    */
   isMoraleBonusAttack?: boolean;
-
   /**
-   * Flat bonus to the ATTACKER's attack for this calculation only (hero stats,
-   * items, ...). The unit objects are never modified — the function stays pure.
-   */
-  heroAttackBonus?: number;
-  /** Flat bonus to the DEFENDER's defense for this calculation only. */
-  heroDefenseBonus?: number;
-
-  /**
-   * Extra luck levels added to the attacker's OWN luckLevel for this hit only
-   * (hero "Удача" skill). resolveAttack adds it, then clamps the total to -3..3 —
-   * if the clamp actually changes the value, a note is written.
-   */
-  luckBonus?: number;
-
-  /**
-   * Whether this attack is melee or ranged. It decides WHICH offense skill applies
-   * (meleeOffenseBonusPercent vs rangedOffenseBonusPercent). Defaults to "melee" so
-   * existing callers and tests keep working unchanged.
+   * Whether this attack is melee or ranged. It decides WHICH offense bonus applies
+   * (meleeOffenseBonusPercent vs rangedOffenseBonusPercent, both from the attacker's
+   * bonuses). Defaults to "melee" so existing callers and tests keep working.
    */
   attackKind?: 'melee' | 'ranged';
-
-  /** Hero skill (offense): extra damage for MELEE attacks, in percent. */
-  meleeOffenseBonusPercent?: number;
-  /** Hero skill (archery): extra damage for RANGED attacks, in percent. */
-  rangedOffenseBonusPercent?: number;
-  /**
-   * TODO (placeholder): extra damage for MAGIC attacks. The source (hero magic
-   * mastery) is an open design question, so no logic is implemented for it: a
-   * non-zero value is reported in `notes`, never applied (docs/decisions.md, 016).
-   */
-  magicOffenseBonusPercent?: number;
-  /**
-   * Hero skill (armorer): reduces incoming PHYSICAL damage (melee + ranged) by this
-   * percent. It must NEVER affect a magical attack — a non-zero value on a magic hit
-   * is reported in `notes` and not applied.
-   */
-  defensiveArmorReductionPercent?: number;
 };
 
 /** Every intermediate value of the formula, exposed for debugging (see the sandbox). */
@@ -108,9 +86,9 @@ export type DamageBreakdown = {
   stackRoll: number;
   flatBonusApplied: number;
   afterFlatBonus: number;
-  /** Attack used for the multiplier, after heroAttackBonus. */
+  /** Attack used for the multiplier, after the attacker's bonuses.attackBonus. */
   effectiveAttack: number;
-  /** Defense used for the multiplier, after heroDefenseBonus. */
+  /** Defense used for the multiplier, after the defender's bonuses.defenseBonus. */
   effectiveDefense: number;
   attackDefenseMultiplier: number;
   afterAttackDefense: number;
@@ -229,9 +207,9 @@ export function clampLuckLevel(value: number): number {
   return Math.max(LUCK_LEVEL_MIN, Math.min(LUCK_LEVEL_MAX, value));
 }
 
-/** Luck level of the attacker, clamped to -3..3 (0 = no luck). */
-function readLuckLevel(attacker: CombatUnit): number {
-  return clampLuckLevel(Math.trunc(attacker.luckLevel ?? 0));
+/** The unit's OWN luck level, truncated but not clamped yet. */
+function readUnitLuckLevel(attacker: CombatUnit): number {
+  return Math.trunc(attacker.luckLevel ?? 0);
 }
 
 /**
@@ -274,18 +252,25 @@ export function roundDamage(value: number): number {
   return Math.round(value + 1e-9);
 }
 
+/** The bonuses of a combatant; a missing object or a missing field means 0. */
+function bonusesOf(unit: CombatUnit): Partial<CombatBonuses> {
+  return unit.bonuses ?? {};
+}
+
 /**
- * Offense skill (step 6): the melee or ranged hero skill, in percent. Only a PHYSICAL
- * attack gets it; a magical attack never does. A non-zero value that does NOT fit the
- * hit is reported in `notes` ("not applied: ...") instead of being silently dropped.
+ * Offense skill (step 6): the melee or ranged bonus of the ATTACKER, in percent.
+ * Only a PHYSICAL attack gets it; a magical attack never does. A non-zero value
+ * that does NOT fit the hit is reported in `notes` ("not applied: ...") instead of
+ * being silently dropped.
  */
 function resolveOffenseSkillPercent(
-  context: AttackContext,
+  attackerBonuses: Partial<CombatBonuses>,
+  attackKind: 'melee' | 'ranged',
   isMagicAttack: boolean,
   notes: string[],
 ): number {
-  const melee = context.meleeOffenseBonusPercent ?? 0;
-  const ranged = context.rangedOffenseBonusPercent ?? 0;
+  const melee = attackerBonuses.meleeOffenseBonusPercent ?? 0;
+  const ranged = attackerBonuses.rangedOffenseBonusPercent ?? 0;
 
   if (isMagicAttack) {
     if (melee !== 0 || ranged !== 0) {
@@ -294,8 +279,6 @@ function resolveOffenseSkillPercent(
 
     return 0;
   }
-
-  const attackKind = context.attackKind ?? 'melee';
 
   if (attackKind === 'melee') {
     if (ranged !== 0) {
@@ -313,16 +296,16 @@ function resolveOffenseSkillPercent(
 }
 
 /**
- * Armor (step 9): armorer reduces incoming PHYSICAL damage only. Against a magical
- * attack a non-zero value is reported in `notes` and never applied
- * (docs/decisions.md, 015 and 016).
+ * Armor (step 9): the DEFENDER's bonus reduces incoming PHYSICAL damage only.
+ * Against a magical attack a non-zero value is reported in `notes` and never
+ * applied (docs/decisions.md, 015 and 016).
  */
 function resolveArmorReductionPercent(
-  context: AttackContext,
+  defenderBonuses: Partial<CombatBonuses>,
   isMagicAttack: boolean,
   notes: string[],
 ): number {
-  const armor = context.defensiveArmorReductionPercent ?? 0;
+  const armor = defenderBonuses.defensiveArmorReductionPercent ?? 0;
 
   if (armor === 0) {
     return 0;
@@ -374,10 +357,12 @@ type DamagePipeline = {
   notes: string[];
 };
 
-/** Steps 3-11: turns unit stats and modifiers into finalDamage. */
+/** Steps 3-11: turns the combatants' stats and bonuses into finalDamage. */
 function calculateDamage(
   attacker: CombatUnit,
   defender: CombatUnit,
+  attackerBonuses: Partial<CombatBonuses>,
+  defenderBonuses: Partial<CombatBonuses>,
   context: AttackContext,
   rules: CombatRules,
   stackCount: number,
@@ -394,15 +379,16 @@ function calculateDamage(
   notes.push(`damage roll mode: ${rules.damageRollMode}`);
   notes.push(stackDamage.note);
 
-  // Step 4 — flat bonus in damage units, applied BEFORE the multiplier.
-  const flatBonusApplied = context.flatDamageBonus ?? 0;
+  // Step 4 — flat bonus in damage units, applied BEFORE the multiplier. It is the
+  // attacker's own total bonus, already collected when the battle was created.
+  const flatBonusApplied = attackerBonuses.flatDamageBonus ?? 0;
   const afterFlatBonus = stackRoll + flatBonusApplied;
 
   // Step 5 — attack/defense multiplier from config/combat-rules.json.
-  // Hero bonuses (items, skill tree) are added HERE and only here: the unit objects
+  // The combatants' bonus totals are added HERE and only here: the unit objects
   // themselves are never modified, so resolveAttack stays a pure function.
-  const effectiveAttack = attacker.stats.attack + (context.heroAttackBonus ?? 0);
-  const effectiveDefense = defender.stats.defense + (context.heroDefenseBonus ?? 0);
+  const effectiveAttack = attacker.stats.attack + (attackerBonuses.attackBonus ?? 0);
+  const effectiveDefense = defender.stats.defense + (defenderBonuses.defenseBonus ?? 0);
   const attackDefenseFactor = attackDefenseMultiplier(effectiveAttack, effectiveDefense, rules);
   const afterAttackDefense = afterFlatBonus * attackDefenseFactor;
 
@@ -422,11 +408,16 @@ function calculateDamage(
 
   // Step 6 — offense skill (melee or ranged): only a PHYSICAL attack gets it. It is a
   // SEPARATE factor, so "+X%" changes the damage by exactly that share (decisions 015).
-  const offenseSkillPercentApplied = resolveOffenseSkillPercent(context, isMagicAttack, notes);
+  const offenseSkillPercentApplied = resolveOffenseSkillPercent(
+    attackerBonuses,
+    context.attackKind ?? 'melee',
+    isMagicAttack,
+    notes,
+  );
   const afterOffenseSkill = afterAttackDefense * (1 + offenseSkillPercentApplied / 100);
 
   // Step 7 — percent bonus, applied AFTER the multiplier.
-  const percentBonusApplied = context.percentDamageBonus ?? 0;
+  const percentBonusApplied = attackerBonuses.percentDamageBonus ?? 0;
   const afterPercentBonus = afterOffenseSkill * (1 + percentBonusApplied / 100);
 
   // Step 8 — luck is a CHANCE to trigger, not a smooth multiplier. The chance comes
@@ -457,7 +448,7 @@ function calculateDamage(
   const afterLuck = afterPercentBonus * luckMultiplierApplied;
 
   // Step 9 — armor: armorer reduces PHYSICAL damage only; a magic hit gets nothing.
-  const armorReductionApplied = resolveArmorReductionPercent(context, isMagicAttack, notes);
+  const armorReductionApplied = resolveArmorReductionPercent(defenderBonuses, isMagicAttack, notes);
   const afterArmor = afterLuck * (1 - armorReductionApplied / 100);
 
   // Step 10 — morale. ONLY a hit that IS a morale extra attack is weakened; an ordinary
@@ -517,7 +508,7 @@ function calculateDamage(
  */
 function pushNotImplementedNotes(
   attacker: CombatUnit,
-  context: AttackContext,
+  attackerBonuses: Partial<CombatBonuses>,
   notes: string[],
 ): void {
   if (hasTag(attacker, 'AreaAttack')) {
@@ -528,7 +519,7 @@ function pushNotImplementedNotes(
   }
 
   const masteryStubs: ReadonlyArray<[string, number | undefined]> = [
-    ['magicOffenseBonusPercent', context.magicOffenseBonusPercent],
+    ['magicOffenseBonusPercent', attackerBonuses.magicOffenseBonusPercent],
   ];
 
   for (const [name, value] of masteryStubs) {
@@ -550,9 +541,15 @@ export function resolveAttack(
   const random = context.random ?? Math.random;
   const stackCount = Math.max(1, Math.trunc(attacker.stackCount ?? 1));
 
-  // Luck = the unit's own level + any hero luck bonus, always clamped to -3..3 (015).
-  // If the clamp really changed the value, say so instead of silently trimming it.
-  const rawLuckLevel = readLuckLevel(attacker) + Math.trunc(context.luckBonus ?? 0);
+  // The bonuses are READ from the combatants, never collected here: they were
+  // already gathered once, when the battle was created (docs/decisions.md, 018).
+  const attackerBonuses = bonusesOf(attacker);
+  const defenderBonuses = bonusesOf(defender);
+
+  // Luck = the unit's own level + the luck in its bonuses, always clamped to
+  // -3..3 ONCE, after both are added (015). If the clamp really changed the
+  // value, say so instead of silently trimming it.
+  const rawLuckLevel = readUnitLuckLevel(attacker) + Math.trunc(attackerBonuses.luckLevel ?? 0);
   const luckLevel = clampLuckLevel(rawLuckLevel);
   if (rawLuckLevel !== luckLevel) {
     notes.push(`luck level clamped from ${rawLuckLevel} to ${luckLevel} (range -3..3)`);
@@ -577,6 +574,8 @@ export function resolveAttack(
     pipeline = calculateDamage(
       attacker,
       defender,
+      attackerBonuses,
+      defenderBonuses,
       context,
       rules,
       stackCount,
@@ -623,7 +622,7 @@ export function resolveAttack(
     );
   }
 
-  pushNotImplementedNotes(attacker, context, notes);
+  pushNotImplementedNotes(attacker, attackerBonuses, notes);
 
   return {
     damageDealt: breakdown.finalDamage,
