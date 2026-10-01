@@ -74,18 +74,20 @@ if (existsSync(CLIENT_DIST)) {
   console.log('[http] client/dist not found — run "npm run dev:client" for the dev client');
 }
 
-// DEV-TOOL: the combat sandbox (server/debug/combat-sandbox.html + POST /debug/attack)
-// and the battle API (/debug/battles/...). It is a developer tool: separate routes,
-// no player authorization, no game state, and it never touches the game protocol
-// in /shared. Not mounted in production.
+// DEV-TOOL: the two combat sandboxes and the battle API.
+//   /debug/combat-sandbox    — the FORMULA page: one strike, full breakdown (old tool);
+//   /debug/battle-sandbox    — the BATTLE page: the hex field, units, rounds, events.
+// Both are developer tools: separate routes, no player authorization, no game state,
+// and they never touch the game protocol in /shared. Not mounted in production.
 // // DEV-TOOL: not mounted in production (docs/conventions.md)
 if (process.env.NODE_ENV === 'production') {
-  console.log('[debug] combat sandbox is disabled (NODE_ENV=production)');
+  console.log('[debug] combat sandboxes are disabled (NODE_ENV=production)');
 } else {
   app.use('/debug', createDebugRouter());
   app.use('/debug', createBattleDebugRouter());
-  console.log(`[debug] combat sandbox: http://${HOST}:${PORT}/debug/combat-sandbox`);
-  console.log(`[debug] battle API:     http://${HOST}:${PORT}/debug/battles`);
+  console.log(`[debug] formula sandbox: http://${HOST}:${PORT}/debug/combat-sandbox`);
+  console.log(`[debug] battle sandbox:  http://${HOST}:${PORT}/debug/battle-sandbox`);
+  console.log(`[debug] battle API:      http://${HOST}:${PORT}/debug/battles`);
 }
 
 const httpServer = createServer(app);

@@ -1,0 +1,1944 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DEV-TOOL — боевая песочница (de-jija)</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; padding: 16px 20px 30px;
+        background: #14161a; color: #e6e6e6;
+        font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+      }
+      h1 { font-size: 20px; margin: 0 0 8px; }
+      h2 { font-size: 15px; margin: 0 0 10px; color: #9fd3ff; }
+      .hint { color: #8b95a5; }
+      .banner {
+        background: #4a2c00; border: 1px solid #a86a00; color: #ffd79a;
+        padding: 8px 12px; border-radius: 6px; margin: 8px 0 14px;
+      }
+      .banner strong { color: #ffb84d; }
+      /* Three columns: left side | tools + field + log | right side. */
+      .layout {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr) 340px;
+        gap: 14px; align-items: start;
+      }
+      @media (max-width: 1300px) { .layout { grid-template-columns: 1fr; } }
+      .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+      section {
+        background: #1c1f26; border: 1px solid #2c313b; border-radius: 8px;
+        padding: 12px 14px; max-height: calc(100vh - 170px); overflow-y: auto;
+      }
+      .row {
+        display: grid; grid-template-columns: 1fr 118px;
+        gap: 8px; align-items: center; margin: 4px 0;
+      }
+      .row.wide { grid-template-columns: 1fr; }
+      .row label { color: #b9c2cf; }
+      .mode {
+        background: #1f2937; border: 1px solid #33415a; border-radius: 6px;
+        color: #9fd3ff; padding: 7px 10px; margin-bottom: 10px; font-weight: 600;
+      }
+      /* The status line above the field: refusals and short confirmations. */
+      .status {
+        min-height: 22px; margin: 0 0 8px; padding: 5px 10px;
+        border-radius: 6px; background: #1f2937;
+        border: 1px solid #33415a; color: #cfe3ff;
+      }
+      .status.error { background: #3b1d1d; border-color: #a33; color: #ffb3b3; }
+      .status .server { display: block; font-size: 12px; color: #8b95a5; }
+      input, select, textarea {
+        background: #0f1116; color: #e6e6e6;
+        border: 1px solid #39404d; border-radius: 5px;
+        padding: 4px 7px; font: inherit; width: 100%; box-sizing: border-box;
+      }
+      input[type="checkbox"] { width: auto; }
+      textarea { font: 12px/1.4 ui-monospace, Consolas, monospace; min-height: 220px; }
+      fieldset.hero-inputs { border: 0; padding: 0; margin: 0; min-width: 0; }
+      fieldset.hero-inputs:disabled { opacity: 0.45; }
+      button {
+        margin-top: 10px; background: #2f6feb; color: #fff; border: 0;
+        border-radius: 6px; padding: 8px 16px; font: inherit; cursor: pointer;
+      }
+      button:hover { background: #3d7ff5; }
+      button.secondary { background: #374151; }
+      button.secondary:hover { background: #4b5563; }
+      button.danger { background: #7f2a2a; }
+      button:disabled { background: #2a2f3a; color: #6b7280; cursor: not-allowed; }
+      .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      /* One unit card in a side panel. */
+      .unit-card {
+        border: 1px solid #2c313b; border-radius: 6px;
+        padding: 8px; margin: 8px 0; background: #191c22;
+      }
+      .unit-card.selected { border-color: #7dffa8; box-shadow: 0 0 0 1px #7dffa8 inset; }
+      .unit-card.unplaced { border-style: dashed; }
+      .unit-card.dead { opacity: 0.45; }
+      .unit-head {
+        display: flex; justify-content: space-between;
+        align-items: center; gap: 6px; margin-bottom: 4px;
+      }
+      .unit-head button { margin: 0; padding: 2px 8px; font-size: 12px; }
+      .tags-view { color: #8b95a5; font-size: 12px; margin: 4px 0; }
+      .slot { border: 1px solid #2c313b; border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+      .slot-hint { color: #b9c2cf; font-size: 12px; min-height: 15px; }
+      .slot-title { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2c313b; }
+      details { margin-top: 10px; color: #93a0b0; }
+      summary { cursor: pointer; }
+      pre {
+        background: #0f1116; border: 1px solid #2c313b; border-radius: 6px;
+        padding: 10px; overflow: auto; max-height: 260px;
+      }
+      .error { color: #ff9b9b; }
+      /* ---- the field ---- */
+      #field-svg {
+        display: block; width: 100%; height: auto;
+        background: #171a20; border: 1px solid #2c313b; border-radius: 8px;
+        touch-action: none; user-select: none;
+      }
+      .hex-cell { stroke: #262b34; stroke-width: 1; fill: #20242c; }
+      .hex-zone { stroke: none; fill: rgba(120, 170, 255, 0.07); }
+      .hex-zone.right { fill: rgba(255, 130, 130, 0.07); }
+      .hex-hit { fill: transparent; cursor: pointer; }
+      /* A reachable target: green for melee, orange for a shot. */
+      .hex-target-melee { fill: rgba(125, 255, 168, 0.22); stroke: #7dffa8; stroke-width: 2; }
+      .hex-target-ranged { fill: rgba(255, 189, 77, 0.22); stroke: #ffbd4d; stroke-width: 2; }
+      .hex-hover { stroke: #9fd3ff; stroke-width: 2; }
+      .unit-token { cursor: pointer; }
+      .token-body { stroke: #0b0d10; stroke-width: 1.5; }
+      .token-body.left { fill: #4a86e8; }
+      .token-body.right { fill: #e2564f; }
+      .token-body.dead { fill: #6b7280; opacity: 0.5; }
+      .token-body.selected { stroke: #7dffa8; stroke-width: 3; }
+      .token-body.target { stroke: #7dffa8; stroke-width: 3; }
+      .token-body.target-ranged { stroke: #ffbd4d; stroke-width: 3; }
+      .token-label {
+        fill: #fff; font: 10px "Segoe UI", system-ui, sans-serif;
+        text-anchor: middle; pointer-events: none;
+      }
+      /* ---- the log ---- */
+      .log-line { border-bottom: 1px solid #262b34; padding: 4px 0; }
+      .log-line.clickable { cursor: pointer; }
+      .log-line.clickable:hover { background: #1f232b; }
+      .log-head { display: flex; justify-content: space-between; gap: 8px; }
+      .log-detail { color: #b9c2cf; font-size: 12px; padding: 4px 0 4px 12px; }
+      .log-detail table { border-collapse: collapse; width: 100%; }
+      .log-detail td { padding: 2px 10px 2px 0; }
+      .log-detail td.value { text-align: right; color: #d8e6ff; font-variant-numeric: tabular-nums; }
+      .notes { margin: 4px 0 0; padding-left: 18px; color: #b9c2cf; }
+    </style>
+  </head>
+
+  <body>
+    <h1>DEV-TOOL: боевая песочница <span class="hint">de-jija</span></h1>
+
+    <div class="banner">
+      <strong>Инструмент разработчика (DEV-TOOL).</strong>
+      Страница <code>/debug/battle-sandbox</code>: не часть игрового клиента, ничего не сохраняет.
+      Она НЕ считает ничего сама — ни соседей, ни расстояний, ни урона, ни ответок: страница
+      только собирает настройки, отправляет команды <code>/debug/battles/…</code> и показывает
+      присланный ответ. Все правила живут на сервере в <code>Battle</code>
+      (docs/conventions.md, 019). В <code>NODE_ENV=production</code> роут НЕ монтируется
+      (DEV-TOOL: not mounted in production).
+      <br />
+      Формульная песочница (разбор одного удара) осталась на
+      <a href="/debug/combat-sandbox" style="color: #9fd3ff">/debug/combat-sandbox</a>.
+    </div>
+
+    <div class="layout">
+      <div class="col" id="col-left"></div>
+
+      <div class="col">
+        <section>
+          <h2>Инструменты</h2>
+          <div id="tools"></div>
+        </section>
+
+        <section>
+          <h2>Поле</h2>
+          <div id="status" class="status">Загрузка…</div>
+          <svg id="field-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div class="hint" style="margin-top: 6px">
+            Клик по юниту — выбрать и показать допустимые цели. Клик по подсвеченной цели —
+            удар. Клик по пустому гексу или перетаскивание юнита — поставить на место.
+            Клик по пустому месту поля — снять выделение.
+          </div>
+        </section>
+
+        <section>
+          <h2>Выбранный юнит</h2>
+          <div id="selected" class="hint">Ничего не выбрано</div>
+        </section>
+
+        <section>
+          <h2>Журнал</h2>
+          <div id="log"></div>
+          <div class="btn-row">
+            <button class="secondary" id="log-clear">Очистить журнал</button>
+          </div>
+        </section>
+
+        <section>
+          <details id="details-balance">
+            <summary>Баланс боя (combat-rules)</summary>
+            <div id="balance"></div>
+          </details>
+        </section>
+
+        <section>
+          <details id="details-setup">
+            <summary>Setup JSON</summary>
+            <div class="hint" style="margin: 6px 0">
+              Текущий setup. Нужен, чтобы сохранить сценарий как тестовую фикстуру.
+            </div>
+            <textarea id="setup-json" spellcheck="false"></textarea>
+            <div class="btn-row">
+              <button id="setup-apply">Применить</button>
+              <button class="secondary" id="setup-copy">Копировать</button>
+            </div>
+            <div id="setup-error" class="error" style="margin-top: 6px"></div>
+          </details>
+        </section>
+      </div>
+
+      <div class="col" id="col-right"></div>
+    </div>
+
+    <script>
+      // DEV-TOOL page logic: builds the forms, draws the field and sends commands.
+      // Plain JavaScript on purpose: this page is a developer tool, not the game.
+      //
+      // WHAT THIS FILE DELIBERATELY DOES NOT DO: it knows no game rules. It never
+      // counts hex neighbours, never measures a distance, never decides who may
+      // hit whom, never adds up damage or retaliation chances. The only geometry
+      // it owns is "hex -> pixels" for drawing. Everything else is asked from the
+      // server: valid targets come from GET /targets, every result from a command.
+      //
+      /** Small element factory, so the code below stays readable. */
+      function node(tag, text, className) {
+        const element = document.createElement(tag);
+        if (text !== undefined && text !== null) element.textContent = String(text);
+        if (className) element.className = className;
+        return element;
+      }
+
+      /** SVG element factory (the field is drawn with SVG, not with divs). */
+      function svgNode(tag, attributes) {
+        const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        for (const [key, value] of Object.entries(attributes || {})) {
+          element.setAttribute(key, String(value));
+        }
+        return element;
+      }
+
+      /** One number, trimmed so long decimals do not fill the panel. */
+      function fmt(value) {
+        if (value === undefined || value === null) return '—';
+        if (typeof value !== 'number') return String(value);
+        if (Number.isInteger(value)) return String(value);
+        return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+      }
+
+      const HERO_SLOTS = 6;
+      const SKILL_LEVELS = [
+        { value: 1, label: 'база' },
+        { value: 2, label: 'про' },
+        { value: 3, label: 'эксперт' },
+      ];
+      const MODE_LABELS = {
+        none: 'Режим: моб против моба',
+        left: 'Режим: PvE — герой левой стороны против мобов',
+        right: 'Режим: PvE — мобы против героя правой стороны',
+        both: 'Режим: PvP — герой против героя',
+      };
+
+      /** Numeric CombatUnit fields the tester may edit. */
+      const UNIT_STAT_FIELDS = [
+        { key: 'hp', label: 'HP юнита (за одного)' },
+        { key: 'attack', label: 'Атака' },
+        { key: 'defense', label: 'Защита' },
+        { key: 'speed', label: 'Скорость' },
+        { key: 'damageMin', label: 'Урон за юнита, мин' },
+        { key: 'damageMax', label: 'Урон за юнита, макс' },
+      ];
+
+      /** Optional numeric CombatUnit fields that reach the formula. */
+      const UNIT_EXTRA_FIELDS = [
+        { key: 'luckLevel', label: 'Удача юнита (−3..3)' },
+        { key: 'shots', label: 'Выстрелов (0 = не стрелок)' },
+      ];
+
+      /** Every field of CombatBonuses: the unit's manual extraBonuses. */
+      const BONUS_FIELDS = [
+        { key: 'attackBonus', label: 'К атаке (очки)' },
+        { key: 'defenseBonus', label: 'К защите (очки)' },
+        { key: 'meleeOffenseBonusPercent', label: 'Нападение, % (ближний бой)' },
+        { key: 'rangedOffenseBonusPercent', label: 'Стрельба, % (дальний бой)' },
+        { key: 'defensiveArmorReductionPercent', label: 'Доспехи, % (физический урон)' },
+        { key: 'luckLevel', label: 'Удача (уровни)' },
+        {
+          key: 'flatDamageBonus',
+          label: 'flatDamageBonus — плоская прибавка к броску урона до всех множителей; пока вместо предметов',
+        },
+        {
+          key: 'percentDamageBonus',
+          label: 'percentDamageBonus — процентный множитель после навыков (20 = ×1.2); пока вместо предметов',
+        },
+        { key: 'magicOffenseBonusPercent', label: 'Магическое мастерство, % — пока не применяется' },
+      ];
+
+      /** combat-rules fields shown in the balance block. */
+      const RULE_FIELDS = [
+        { key: 'attackAdvantagePercentPerPoint', label: 'Атака: % за очко разницы' },
+        { key: 'attackAdvantageCapPercent', label: 'Потолок преимущества атаки, %' },
+        { key: 'defensePenaltyPercentPerPoint', label: 'Защита: % за очко разницы' },
+        { key: 'defensePenaltyFloorPercent', label: 'Пол защиты, %' },
+        { key: 'luckPositiveMultiplier', label: 'Множитель удачи (плюс)' },
+        { key: 'luckNegativeMultiplier', label: 'Множитель неудачи (минус)' },
+        { key: 'moraleBonusAttackMultiplier', label: 'Множитель удара за мораль' },
+        { key: 'minimumDamage', label: 'Минимальный урон' },
+        { key: 'damageRollMode', label: 'Режим броска урона', mode: true },
+        { key: 'damageRollSamples', label: 'Сэмплов в режиме sampled' },
+      ];
+
+      /** The whole client-side state of the page. No game rules in here. */
+      const state = {
+        templates: [],
+        skills: [],
+        battleRules: { fieldWidth: 15, fieldHeight: 11, startZoneWidth: 2 },
+        combatRules: {},
+        sides: { left: newSide(), right: newSide() },
+        rulesOverride: {},
+        battleId: null,
+        battle: null,
+        selectedId: null,
+        targets: [],
+        log: [],
+        hoverHex: null,
+        drag: null,
+      };
+
+      /** An empty side panel: hero switched off, no units. */
+      function newSide() {
+        return {
+          heroEnabled: false,
+          hero: { stats: { attack: 0, defense: 0, spellPower: 0, knowledge: 0 }, skills: [] },
+          units: [],
+          nextUnitNumber: 1,
+        };
+      }
+
+      /** The side panel -> the side of the setup. */
+      function sideSetup(sideName) {
+        const side = state.sides[sideName];
+
+        return {
+          hero: side.heroEnabled ? readHero(sideName) : null,
+          units: side.units.map(unitToSetup),
+        };
+      }
+
+      /** One unit card -> a UnitSetup of the server. */
+      function unitToSetup(unit) {
+        const setup = {
+          id: unit.id,
+          unit: {
+            id: unit.id,
+            name: unit.name,
+            stats: { ...unit.stats },
+            tags: unit.tags.slice(),
+            currentHp: unit.stats.hp * unit.stackCount,
+            stackCount: unit.stackCount,
+          },
+          stackCount: unit.stackCount,
+          hex: unit.hex ? { x: unit.hex.x, y: unit.hex.y } : null,
+        };
+
+        if (unit.luckLevel !== undefined) setup.unit.luckLevel = unit.luckLevel;
+        if (unit.shots !== undefined) setup.unit.shots = unit.shots;
+        if (unit.retaliationsPerRound !== undefined) {
+          setup.unit.retaliationsPerRound = unit.retaliationsPerRound;
+        }
+
+        // Only the bonuses the tester actually typed, so setup.rules and
+        // extraBonuses stay readable and a scenario can be saved as a fixture.
+        const bonuses = {};
+
+        for (const field of BONUS_FIELDS) {
+          const value = unit.extraBonuses[field.key];
+          if (value) bonuses[field.key] = value;
+        }
+        if (Object.keys(bonuses).length > 0) setup.extraBonuses = bonuses;
+
+        return setup;
+      }
+
+      /** The whole BattleSetup, straight from the panels. */
+      function currentSetup() {
+        const setup = {
+          placementMode: 'free',
+          sides: { left: sideSetup('left'), right: sideSetup('right') },
+        };
+        const override = currentRulesOverride();
+
+        if (Object.keys(override).length > 0) setup.rules = override;
+
+        return setup;
+      }
+
+      /** Only the rule values that differ from the server defaults. */
+      function currentRulesOverride() {
+        const override = {};
+
+        for (const field of RULE_FIELDS) {
+          const value = state.rulesOverride[field.key];
+          if (value === undefined) continue;
+          if (value !== state.combatRules[field.key]) override[field.key] = value;
+        }
+
+        return override;
+      }
+
+      /* ---------------------------------------------------------------- *
+       * Talking to the API. A refusal by the rules is a normal 200 with
+       * ok:false, so it comes back as data and is shown to the tester.
+       * ---------------------------------------------------------------- */
+      async function apiGet(path) {
+        const response = await fetch(path);
+        return { status: response.status, body: await response.json() };
+      }
+
+      async function apiSend(path, body, method) {
+        const response = await fetch(path, {
+          method: method || 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        return { status: response.status, body: await response.json() };
+      }
+
+      /** Russian text for every refusal code the API can return. */
+      const CODE_TEXTS = {
+        UNIT_NOT_FOUND: 'Юнит не найден в этом бою',
+        UNIT_DEAD: 'Юнит уничтожен и больше не действует',
+        SAME_SIDE: 'Нельзя бить своих',
+        NOT_PLACED: 'Юнит ещё не поставлен на поле',
+        TOO_FAR: 'Цель слишком далеко (и стрелок не может её достать)',
+        NO_SHOTS: 'Выстрелы кончились',
+        HEX_OUT_OF_FIELD: 'Гекс вне поля',
+        HEX_OCCUPIED: 'Гекс уже занят',
+        PLACEMENT_FORBIDDEN: 'В этом режиме так ставить нельзя',
+        SETUP_INVALID: 'Настройки боя некорректны',
+        BAD_REQUEST: 'Сервер не понял запрос',
+      };
+
+      /** Shows a message above the field; `server` (if given) goes in small print. */
+      function setStatus(text, serverMessage, isError) {
+        const target = document.getElementById('status');
+
+        target.className = isError ? 'status error' : 'status';
+        target.textContent = '';
+        target.append(node('span', text));
+        if (serverMessage) target.append(node('span', serverMessage, 'server'));
+      }
+
+      /** Shows a Battle refusal: the Russian text by code plus the server message. */
+      function showRefusal(code, message) {
+        setStatus(CODE_TEXTS[code] || 'Действие отклонено', message, true);
+      }
+
+      /** Finds a unit card in either side by its id. */
+      function findUnit(unitId) {
+        for (const sideName of ['left', 'right']) {
+          const found = state.sides[sideName].units.find((unit) => unit.id === unitId);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      /** The battle's own view of a unit (aliveCount, poolHp, shotsLeft, ...). */
+      function battleUnit(unitId) {
+        if (!state.battle) return null;
+        return state.battle.units.find((unit) => unit.id === unitId) || null;
+      }
+
+      /* ---------------------------------------------------------------- *
+       * Commands. Every one of them asks the server; the page only sends and
+       * then draws whatever came back.
+       * ---------------------------------------------------------------- */
+
+      /** The debug switches of a strike, built from the tools panel. Empty by default. */
+      function readAttackOptions() {
+        const options = {};
+        const roll = document.getElementById('opt-damage-roll').value;
+        const luck = document.getElementById('opt-luck-roll').value;
+
+        if (roll !== '') options.fixedDamageRoll = Number(roll);
+        if (luck !== '') options.fixedLuckRoll = Number(luck);
+        if (document.getElementById('opt-morale').checked) options.moraleExtraAttack = true;
+
+        return options;
+      }
+
+      /**
+       * Rebuilds the battle from the panels. Called (with a debounce) after ANY
+       * change in a panel: hero, units or balance. Positions are taken from the
+       * current battle, so the field keeps its layout while hp, shots and the
+       * retaliation counters go back to their initial values.
+       */
+      let rebuildTimer = null;
+
+      function scheduleRebuild() {
+        clearTimeout(rebuildTimer);
+        rebuildTimer = setTimeout(rebuildBattle, 300);
+      }
+
+      async function rebuildBattle() {
+        // Positions live in the battle, so they are copied into the panels first.
+        syncHexesFromBattle();
+
+        const response = await apiSend('/debug/battles', { setup: currentSetup() });
+
+        if (response.status !== 200 || !response.body.ok) {
+          // The old battle stays on screen: a bad setup must not wipe the field.
+          const code = (response.body && response.body.code) || 'BAD_REQUEST';
+          const message = (response.body && response.body.message) || '';
+
+          showRefusal(code, message);
+          showPanelError(code, message);
+          return;
+        }
+
+        clearPanelError();
+        state.battleId = response.body.battleId;
+        state.battle = response.body.state;
+        state.targets = [];
+        if (!state.selectedId || !findUnit(state.selectedId)) state.selectedId = null;
+
+        for (const event of response.body.events || []) addLogRow(event);
+        renderAll();
+        setStatus('Бой пересобран: hp, ответки и выстрелы сброшены', '', false);
+      }
+
+      /** Copies the positions of the running battle into the side panels. */
+      function syncHexesFromBattle() {
+        if (!state.battle) return;
+
+        for (const unit of state.battle.units) {
+          const card = findUnit(unit.id);
+          if (!card) continue;
+          card.hex = unit.hexes.length > 0 ? { x: unit.hexes[0].x, y: unit.hexes[0].y } : null;
+        }
+      }
+
+      /** The setup error shown right next to the panels that caused it. */
+      function showPanelError(code, message) {
+        const target = document.getElementById('panel-error');
+
+        if (!target) return;
+        target.className = 'error';
+        target.textContent = (CODE_TEXTS[code] || 'Ошибка') + (message ? ': ' + message : '');
+      }
+
+      function clearPanelError() {
+        const target = document.getElementById('panel-error');
+        if (target) target.textContent = '';
+      }
+
+      /** One strike. The target list comes from the server, never from our guess. */
+      async function sendAttack(targetId) {
+        if (!state.battleId) return;
+
+        const response = await apiSend(`/debug/battles/${state.battleId}/attack`, {
+          attackerId: state.selectedId,
+          targetId: targetId,
+          options: readAttackOptions(),
+        });
+        const body = response.body;
+
+        if (body.ok === false) showRefusal(body.code, body.message);
+        else setStatus('Удар нанесён', '', false);
+
+        // The state always comes back, so the field is redrawn either way.
+        if (body.state) state.battle = body.state;
+        for (const event of body.events || []) addLogRow(event);
+        await refreshTargets();
+        renderAll();
+      }
+
+      /** Puts a unit on a cell. */
+      async function sendPlace(unitId, hex) {
+        if (!state.battleId) return;
+
+        const response = await apiSend(`/debug/battles/${state.battleId}/place`, {
+          unitId: unitId,
+          hex: hex,
+        });
+        const body = response.body;
+
+        if (body.ok === false) {
+          showRefusal(body.code, body.message);
+        } else {
+          const card = findUnit(unitId);
+          // The cell was freed first, so a refused drag must be undone here.
+          if (card) card.hex = { x: hex.x, y: hex.y };
+          setStatus('Юнит поставлен', '', false);
+        }
+
+        if (body.state) state.battle = body.state;
+        for (const event of body.events || []) addLogRow(event);
+        await refreshTargets();
+        renderAll();
+      }
+
+      /** Starts the next round. */
+      async function sendNextRound() {
+        if (!state.battleId) return;
+
+        const response = await apiSend(`/debug/battles/${state.battleId}/next-round`);
+        const body = response.body;
+
+        if (body.ok === false) showRefusal(body.code, body.message);
+        else setStatus('Начался новый раунд', '', false);
+
+        if (body.state) state.battle = body.state;
+        for (const event of body.events || []) addLogRow(event);
+        await refreshTargets();
+        renderAll();
+      }
+
+      /** Asks the server which targets the selected unit may hit. */
+      async function refreshTargets() {
+        if (!state.battleId || !state.selectedId) {
+          state.targets = [];
+          return;
+        }
+
+        const response = await apiGet(
+          `/debug/battles/${state.battleId}/targets?unitId=${encodeURIComponent(state.selectedId)}`,
+        );
+
+        // A refusal here is not worth a message: the field already shows it.
+        state.targets = response.body.ok === true ? response.body.targets : [];
+      }
+
+      /* ---------------------------------------------------------------- *
+       * Drawing the field.
+       *
+       * The ONLY geometry on this page: a cell -> its centre in pixels
+       * (pointy-top odd-r, per docs/battle.md section 10). Nothing here asks
+       * "is this a neighbour?" or "how far is that?" — the reachable targets
+       * were already sent by the server in state.targets.
+       * ---------------------------------------------------------------- */
+      const HEX_SIZE = 26;
+
+      /** Cell centre in pixels. Pure drawing, not a game rule. */
+      function hexCenter(hex) {
+        const size = HEX_SIZE;
+
+        return {
+          cx: size * Math.sqrt(3) * (hex.x + 0.5 * (hex.y & 1)),
+          cy: size * 1.5 * hex.y,
+        };
+      }
+
+      /** The outline of a pointy-top hexagon, as SVG points around the centre. */
+      function hexPoints(cx, cy, size) {
+        const points = [];
+
+        for (let corner = 0; corner < 6; corner++) {
+          const angle = (Math.PI / 180) * (60 * corner - 30);
+          points.push(
+            (cx + size * Math.cos(angle)).toFixed(2) + ',' + (cy + size * Math.sin(angle)).toFixed(2),
+          );
+        }
+
+        return points.join(' ');
+      }
+
+      /** Hit test of the pointer against one cell (used for clicks and drags). */
+      function pointerInside(event, cx, cy) {
+        const svg = document.getElementById('field-svg');
+        const point = svg.createSVGPoint();
+
+        point.x = event.clientX;
+        point.y = event.clientY;
+
+        const local = point.matrixTransform(svg.getScreenCTM().inverse());
+        const size = HEX_SIZE;
+        const dx = Math.abs(local.x - cx);
+        const dy = Math.abs(local.y - cy);
+
+        // A pointy-top hexagon: the vertical band is the full height, and the
+        // half-width shrinks linearly towards the top and bottom points.
+        if (dy > size) return false;
+
+        return dx <= (Math.sqrt(3) / 2) * size * (1 - dy / (2 * size));
+      }
+
+      /** The cell under the pointer, or null when the pointer is off the field. */
+      function hexUnderPointer(event) {
+        const { fieldWidth, fieldHeight } = state.battleRules;
+
+        for (let y = 0; y < fieldHeight; y++) {
+          for (let x = 0; x < fieldWidth; x++) {
+            const { cx, cy } = hexCenter({ x, y });
+
+            if (pointerInside(event, cx, cy)) return { x, y };
+          }
+        }
+
+        return null;
+      }
+
+      /** The kind the server reported for a target, or null when it is not a target. */
+      function targetKind(unitId) {
+        const found = state.targets.find((target) => target.targetId === unitId);
+        return found ? found.kind : null;
+      }
+
+      /** Redraws the whole field from the battle state. */
+      function renderField() {
+        const svg = document.getElementById('field-svg');
+        const { fieldWidth, fieldHeight, startZoneWidth } = state.battleRules;
+        const width = HEX_SIZE * Math.sqrt(3) * (fieldWidth + 0.5);
+        const height = HEX_SIZE * 1.5 * (fieldHeight - 1) + HEX_SIZE * 2;
+
+        svg.textContent = '';
+        svg.setAttribute('viewBox', `${-HEX_SIZE} ${-HEX_SIZE} ${width + HEX_SIZE * 2} ${height}`);
+
+        for (let y = 0; y < fieldHeight; y++) {
+          for (let x = 0; x < fieldWidth; x++) {
+            const { cx, cy } = hexCenter({ x, y });
+            let className = 'hex-cell';
+
+            // The starting zones are only tinted so the eye finds the edges.
+            if (x < startZoneWidth) className += ' hex-zone left';
+            else if (x >= fieldWidth - startZoneWidth) className += ' hex-zone right';
+
+            if (state.hoverHex && state.hoverHex.x === x && state.hoverHex.y === y) {
+              className += ' hex-hover';
+            }
+
+            svg.append(
+              svgNode('polygon', { points: hexPoints(cx, cy, HEX_SIZE * 0.94), class: className }),
+            );
+          }
+        }
+
+        // Every placed unit. Destroyed stacks are drawn last and stay unclickable.
+        const placed = state.battle
+          ? state.battle.units.filter((unit) => unit.hexes.length > 0)
+          : [];
+
+        for (const unit of placed.slice().sort((a, b) => a.aliveCount - b.aliveCount)) {
+          svg.append(buildToken(unit));
+        }
+      }
+
+      /** One unit on the field: a circle with the short name and the stack size. */
+      function buildToken(unit) {
+        const { cx, cy } = hexCenter(unit.hexes[0]);
+        const card = findUnit(unit.id);
+        const name = card ? card.name : unit.id;
+        const short = name.length > 9 ? name.slice(0, 8) + '…' : name;
+        const kind = targetKind(unit.id);
+
+        let className = 'token-body ' + unit.side;
+
+        if (unit.aliveCount <= 0) className += ' dead';
+        else if (unit.id === state.selectedId) className += ' selected';
+        else if (kind === 'melee') className += ' target';
+        else if (kind === 'ranged') className += ' target-ranged';
+
+        const group = svgNode('g', { class: 'unit-token' });
+
+        group.append(svgNode('circle', { cx, cy, r: HEX_SIZE * 0.62, class: className }));
+
+        const label = svgNode('text', { x: cx, y: cy + 3.5, class: 'token-label' });
+
+        label.textContent = short + ' ×' + unit.aliveCount;
+        group.append(label);
+
+        if (unit.aliveCount <= 0) {
+          // A destroyed stack stays on the field, greyed out and NOT clickable.
+          group.style.cursor = 'default';
+        } else {
+          group.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
+            startDrag(event, unit);
+          });
+        }
+
+        return group;
+      }
+
+      /* ---------------------------------------------------------------- *
+       * Pointer: click, drag and drop.
+       *
+       * A drag only starts after the pointer has moved 4 px, so a plain click
+       * on a unit is still a click (select) and not a tiny accidental drag.
+       * ---------------------------------------------------------------- */
+      const DRAG_THRESHOLD = 4;
+
+      /** Remembers what the pointer pressed and where. */
+      function startDrag(event, unit) {
+        state.drag = {
+          unitId: unit.id,
+          startX: event.clientX,
+          startY: event.clientY,
+          moved: false,
+        };
+      }
+
+      /** Finishes the drag: a real drag means "put the unit on that cell". */
+      async function finishDrag(event, wasDrag) {
+        const drag = state.drag;
+        state.drag = null;
+
+        if (!drag) return;
+        if (!wasDrag) {
+          // A click: select the unit, or strike a highlighted target.
+          await handleUnitClick(drag.unitId);
+          return;
+        }
+
+        const hex = hexUnderPointer(event);
+
+        if (!hex) {
+          // Dropped outside the field: the unit stays where it was.
+          renderAll();
+          return;
+        }
+        if (drag.unitId !== state.selectedId) await selectUnit(drag.unitId);
+        await sendPlace(drag.unitId, hex);
+      }
+
+      /** A click on a unit: strike a highlighted target, otherwise just select. */
+      async function handleUnitClick(unitId) {
+        if (state.selectedId && targetKind(unitId)) {
+          await sendAttack(unitId);
+          return;
+        }
+        if (unitId === state.selectedId) {
+          // Clicking the selected unit again takes the selection back.
+          state.selectedId = null;
+          state.targets = [];
+          renderAll();
+          return;
+        }
+        await selectUnit(unitId);
+      }
+
+      /** Selects a unit and asks the server for its reachable targets. */
+      async function selectUnit(unitId) {
+        state.selectedId = unitId;
+        await refreshTargets();
+        renderAll();
+      }
+
+      /** A click on an empty cell: put the selected unit there, or clear the selection. */
+      async function handleEmptyCellClick(hex) {
+        if (state.selectedId) {
+          const card = findUnit(state.selectedId);
+
+          // An unplaced unit is placed by the same command as a placed one.
+          if (card) await sendPlace(state.selectedId, hex);
+          return;
+        }
+        state.selectedId = null;
+        state.targets = [];
+        renderAll();
+      }
+
+      /** Wires the field to the pointer. */
+      function bindFieldEvents() {
+        const svg = document.getElementById('field-svg');
+
+        svg.addEventListener('pointerdown', (event) => {
+          const hex = hexUnderPointer(event);
+          state.drag = { unitId: null, startX: event.clientX, startY: event.clientY, moved: false };
+          if (hex) state.drag.pendingHex = hex;
+        });
+
+        svg.addEventListener('pointermove', (event) => {
+          const drag = state.drag;
+
+          if (drag) {
+            const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+
+            if (distance > DRAG_THRESHOLD) drag.moved = true;
+          }
+
+          const hex = hexUnderPointer(event);
+          const changed =
+            (hex && state.hoverHex && (hex.x !== state.hoverHex.x || hex.y !== state.hoverHex.y)) ||
+            (!hex && state.hoverHex);
+
+          state.hoverHex = hex;
+          if (changed || (drag && drag.moved)) renderField();
+        });
+
+        svg.addEventListener('pointerup', async (event) => {
+          const drag = state.drag;
+
+          if (!drag) return;
+
+          if (drag.moved) {
+            await finishDrag(event, true);
+            return;
+          }
+          if (drag.unitId) {
+            // The pointerdown on the token already filled this in.
+            await finishDrag(event, false);
+            return;
+          }
+          if (drag.pendingHex) await handleEmptyCellClick(drag.pendingHex);
+          state.drag = null;
+        });
+
+        // A click on the empty space around the field drops the selection.
+        svg.addEventListener('click', (event) => {
+          if (state.drag) return;
+          if (hexUnderPointer(event)) return;
+          state.selectedId = null;
+          state.targets = [];
+          renderAll();
+        });
+      }
+
+      /* ---------------------------------------------------------------- *
+       * Panels
+       * ---------------------------------------------------------------- */
+
+      /** A "label + number input" row. Empty value = "not sent". */
+      function numberRow(container, id, labelText, value, placeholder, onChange) {
+        const row = node('div', null, 'row');
+        const label = node('label', labelText);
+        const input = node('input');
+
+        label.htmlFor = id;
+        input.id = id;
+        input.type = 'number';
+        input.step = 'any';
+        if (value !== undefined && value !== null) input.value = String(value);
+        if (placeholder) input.placeholder = placeholder;
+        input.addEventListener('change', () => onChange(input.value));
+
+        row.append(label, input);
+        container.append(row);
+
+        return input;
+      }
+
+      /** A "label + checkbox" row. */
+      function checkRow(container, id, labelText, checked, onChange) {
+        const row = node('div', null, 'row wide');
+        const label = node('label', labelText);
+        const input = node('input');
+
+        label.htmlFor = id;
+        input.id = id;
+        input.type = 'checkbox';
+        input.checked = Boolean(checked);
+        input.addEventListener('change', () => onChange(input.checked));
+
+        row.append(label, input);
+        container.append(row);
+
+        return input;
+      }
+
+      /** The tools panel: rounds, rebuild and the debug switches of a strike. */
+      function buildTools() {
+        const target = document.getElementById('tools');
+
+        target.append(node('div', 'Раунд: ' + (state.battle ? state.battle.round : 1), 'mode')).id =
+          'round-label';
+
+        const buttons = node('div', null, 'btn-row');
+
+        const nextRound = node('button', 'Следующий раунд', 'secondary');
+        nextRound.addEventListener('click', sendNextRound);
+        buttons.append(nextRound);
+
+        const rebuild = node('button', 'Пересобрать бой', 'secondary');
+        rebuild.addEventListener('click', rebuildBattle);
+        buttons.append(rebuild);
+
+        target.append(buttons);
+        target.append(
+          node(
+            'div',
+            'Пересборка возвращает hp в максимум и сбрасывает ответки и выстрелы; позиции сохраняются.',
+            'hint',
+          ),
+        );
+
+        target.append(node('div', 'Параметры удара — только отладка, правил не меняет', 'slot-title'));
+
+        numberRow(
+          target,
+          'opt-damage-roll',
+          'Зафиксировать бросок урона (0..0.99, пусто = случайно)',
+          '',
+          'случайно',
+          () => {},
+        );
+        numberRow(
+          target,
+          'opt-luck-roll',
+          'Зафиксировать бросок удачи (0..0.99, пусто = случайно)',
+          '',
+          'случайно',
+          () => {},
+        );
+        checkRow(
+          target,
+          'opt-morale',
+          'Удар за доп. ход морали (урон ×0.8)',
+          false,
+          () => {},
+        );
+      }
+
+      /** Rebuilds the tools panel (the round counter changes). */
+      function renderTools() {
+        const label = document.getElementById('round-label');
+
+        if (label) {
+          label.textContent = 'Раунд: ' + (state.battle ? state.battle.round : 1);
+        }
+      }
+
+      /** Rebuilds the mode line from the two hero toggles. */
+      function renderMode() {
+        const left = state.sides.left.heroEnabled;
+        const right = state.sides.right.heroEnabled;
+        const key = left && right ? 'both' : left ? 'left' : right ? 'right' : 'none';
+        const target = document.getElementById('battle-mode');
+
+        if (target) target.textContent = MODE_LABELS[key];
+      }
+
+      /** The "selected unit" block: the numbers the server reported. */
+      function renderSelected() {
+        const target = document.getElementById('selected');
+
+        target.textContent = '';
+        if (!state.selectedId) {
+          target.className = 'hint';
+          target.append(node('div', 'Ничего не выбрано'));
+
+          return;
+        }
+
+        const card = findUnit(state.selectedId);
+        const live = battleUnit(state.selectedId);
+
+        target.className = '';
+
+        if (!card) {
+          target.append(node('div', 'Юнит ' + state.selectedId + ' больше не в панели'));
+
+          return;
+        }
+
+        target.append(node('div', 'id: ' + card.id + '  (' + (card.name || 'без имени') + ')'));
+
+        if (live) {
+          const rows = [
+            ['aliveCount (живых юнитов в стеке)', fmt(live.aliveCount)],
+            ['poolHp (пул HP стека)', fmt(live.poolHp)],
+            ['shotsLeft (выстрелов)', fmt(live.shotsLeft)],
+            ['retaliationsLeft (ответок в раунде)', fmt(live.retaliationsLeft)],
+          ];
+          const table = node('table');
+
+          for (const row of rows) {
+            const tr = node('tr');
+            tr.append(node('td', row[0]), node('td', row[1], 'value'));
+            table.append(tr);
+          }
+          target.append(table);
+        } else {
+          target.append(node('div', 'Юнита нет в бою (пересобери бой)', 'hint'));
+        }
+
+        if (!card.hex) {
+          target.append(node('div', 'Не расставлен: кликните по гексу, чтобы поставить', 'hint'));
+        }
+
+        if (state.targets.length > 0) {
+          const kinds = state.targets.map((target_) => target_.targetId + ' (' + target_.kind + ')');
+          target.append(node('div', 'Допустимые цели: ' + kinds.join(', '), 'hint'));
+        }
+      }
+
+      /** Skill ids already taken by this hero (a skill may not sit in two slots). */
+      function usedSkillIds(sideName) {
+        return new Set(state.sides[sideName].hero.skills.filter(Boolean).map((slot) => slot.skillId));
+      }
+
+      /** Disables every skill option that another slot of this hero already uses. */
+      function refreshSkillOptions(sideName) {
+        const used = usedSkillIds(sideName);
+
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          const select = document.getElementById('hero-' + sideName + '-skill-' + index);
+          if (!select) continue;
+
+          const own = select.value;
+
+          for (let position = 0; position < select.options.length; position++) {
+            const option = select.options[position];
+            if (!option.value) continue;
+            option.disabled = option.value !== own && used.has(option.value);
+          }
+        }
+      }
+
+      /** Shows the Russian description of the chosen level (plus a "not used yet" mark). */
+      function refreshHeroSlot(sideName, index) {
+        const slot = document.getElementById('hero-' + sideName + '-slot-' + index);
+        if (!slot) return;
+
+        const skillSelect = slot.querySelector('select[data-role="skill"]');
+        const levelSelect = slot.querySelector('select[data-role="level"]');
+        const hint = slot.querySelector('.slot-hint');
+        const skillId = skillSelect.value;
+
+        if (!skillId) {
+          levelSelect.disabled = true;
+          hint.textContent = '';
+          return;
+        }
+
+        levelSelect.disabled = false;
+        const skill = state.skills.find((item) => item.id === skillId);
+        if (!skill) {
+          hint.textContent = '';
+          return;
+        }
+
+        const level = Number(levelSelect.value);
+        const text = skill.levels[level - 1] || '';
+
+        hint.textContent = skill.affectsAttackNow
+          ? text
+          : text + ' — пока не влияет на resolveAttack';
+      }
+
+      /** Reads one hero panel into the server's HeroLoadout format. */
+      function readHero(sideName) {
+        const side = state.sides[sideName];
+        const skills = [];
+
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          const skillId = document.getElementById('hero-' + sideName + '-skill-' + index).value;
+          if (!skillId) continue;
+
+          skills.push({
+            skillId: skillId,
+            level: Number(document.getElementById('hero-' + sideName + '-level-' + index).value),
+          });
+        }
+
+        return {
+          stats: {
+            attack: side.hero.stats.attack,
+            defense: side.hero.stats.defense,
+            spellPower: side.hero.stats.spellPower,
+            knowledge: side.hero.stats.knowledge,
+          },
+          skills: skills,
+        };
+      }
+
+      /** Builds the hero panel of one side (called again on every change). */
+      function buildHeroPanel(sideName, title) {
+        const side = state.sides[sideName];
+        const section = node('section');
+
+        section.append(node('h2', title));
+
+        checkRow(
+          section,
+          'hero-' + sideName + '-enabled',
+          'Герой участвует в бою',
+          side.heroEnabled,
+          (checked) => {
+            side.heroEnabled = checked;
+            // A switched-off hero keeps its numbers; they are just not sent.
+            buildSidePanel(sideName);
+            renderMode();
+            scheduleRebuild();
+          },
+        );
+
+        const fieldset = node('fieldset', null, 'hero-inputs');
+
+        fieldset.id = 'hero-' + sideName + '-inputs';
+        fieldset.disabled = !side.heroEnabled;
+
+        const statRows = [
+          ['attack', 'Атака', ''],
+          ['defense', 'Защита', ''],
+          ['spellPower', 'Сила магии', 'пока не влияет'],
+          ['knowledge', 'Знания', 'пока не влияет'],
+        ];
+
+        for (const [key, label, note] of statRows) {
+          numberRow(
+            fieldset,
+            'hero-' + sideName + '-' + key,
+            note ? label + ' — ' + note : label,
+            side.hero.stats[key],
+            '0',
+            (raw) => {
+              const value = Number(raw);
+              side.hero.stats[key] = Number.isFinite(value) ? value : 0;
+              scheduleRebuild();
+            },
+          );
+        }
+
+        fieldset.append(
+          node('div', 'Навыки — до 6, один навык только в одном слоте', 'slot-title hint'),
+        );
+
+        for (let index = 0; index < HERO_SLOTS; index++) {
+          fieldset.append(buildSkillSlot(sideName, index));
+        }
+
+        section.append(fieldset);
+
+        return section;
+      }
+
+      /** One skill slot: a skill select, a level select and a Russian hint. */
+      function buildSkillSlot(sideName, index) {
+        const side = state.sides[sideName];
+        const slot = node('div', null, 'slot');
+
+        slot.id = 'hero-' + sideName + '-slot-' + index;
+        slot.append(node('div', 'Слот ' + (index + 1), 'slot-head'));
+
+        const skillSelect = node('select');
+
+        skillSelect.id = 'hero-' + sideName + '-skill-' + index;
+        skillSelect.dataset.role = 'skill';
+
+        const empty = node('option', '— нет навыка —');
+        empty.value = '';
+        skillSelect.append(empty);
+
+        for (const skill of state.skills) {
+          const option = node('option', skill.name);
+          option.value = skill.id;
+          skillSelect.append(option);
+        }
+
+        const levelSelect = node('select');
+
+        levelSelect.id = 'hero-' + sideName + '-level-' + index;
+        levelSelect.dataset.role = 'level';
+
+        for (const level of SKILL_LEVELS) {
+          const option = node('option', level.label);
+          option.value = String(level.value);
+          levelSelect.append(option);
+        }
+
+        const stored = side.hero.skills[index];
+
+        skillSelect.value = (stored && stored.skillId) || '';
+        levelSelect.value = String((stored && stored.level) || 1);
+
+        const storeSlot = () => {
+          side.hero.skills[index] = skillSelect.value
+            ? { skillId: skillSelect.value, level: Number(levelSelect.value) }
+            : null;
+        };
+
+        skillSelect.addEventListener('change', () => {
+          storeSlot();
+          refreshSkillOptions(sideName);
+          refreshHeroSlot(sideName, index);
+          scheduleRebuild();
+        });
+
+        levelSelect.addEventListener('change', () => {
+          storeSlot();
+          refreshHeroSlot(sideName, index);
+          scheduleRebuild();
+        });
+
+        slot.append(skillSelect, levelSelect, node('div', null, 'slot-hint'));
+        refreshSkillOptions(sideName);
+        refreshHeroSlot(sideName, index);
+
+        return slot;
+      }
+
+      /** A copy of a template, ready to be edited and placed. */
+      function unitFromTemplate(template, sideName) {
+        const side = state.sides[sideName];
+        const id = sideName + side.nextUnitNumber++;
+
+        const unit = {
+          id: id,
+          name: template.name,
+          stats: { ...template.stats },
+          tags: template.tags.slice(),
+          stackCount: 10,
+          hex: null,
+          extraBonuses: {},
+        };
+
+        if (template.luckLevel !== undefined) unit.luckLevel = template.luckLevel;
+        if (template.shots !== undefined) unit.shots = template.shots;
+        if (template.retaliationsPerRound !== undefined) {
+          unit.retaliationsPerRound = template.retaliationsPerRound;
+        }
+
+        return unit;
+      }
+
+      /** The units panel of one side: the preset picker and one card per unit. */
+      function buildUnitsPanel(sideName, title) {
+        const side = state.sides[sideName];
+        const section = node('section');
+        const maxUnits = state.battleRules.maxUnitsPerSide || 7;
+
+        section.append(node('h2', title));
+
+        const presetRow = node('div', null, 'row wide');
+        const label = node('label', 'Добавить юнита (шаблон, потом правится вручную)');
+        const select = node('select');
+
+        label.htmlFor = 'preset-' + sideName;
+        select.id = 'preset-' + sideName;
+
+        const empty = node('option', '— выбрать шаблон —');
+        empty.value = '';
+        select.append(empty);
+
+        for (const template of state.templates) {
+          const option = node('option', template.name + ' [' + template.category + ']');
+          option.value = template.id;
+          select.append(option);
+        }
+
+        select.addEventListener('change', () => {
+          const template = state.templates.find((item) => item.id === select.value);
+          select.value = '';
+          if (!template) return;
+          side.units.push(unitFromTemplate(template, sideName));
+          buildSidePanel(sideName);
+          scheduleRebuild();
+        });
+
+        presetRow.append(label, select);
+        section.append(presetRow);
+
+        if (side.units.length >= maxUnits) {
+          section.append(
+            node('div', 'Больше ' + maxUnits + ' юнитов на сторону нельзя (maxUnitsPerSide)', 'error'),
+          );
+        }
+        if (side.units.length === 0) {
+          section.append(node('div', 'Юнитов нет — добавьте шаблон сверху', 'hint'));
+        }
+
+        for (const unit of side.units) {
+          section.append(buildUnitCard(sideName, unit));
+        }
+
+        return section;
+      }
+
+      /** Builds (or rebuilds) the whole column of one side. */
+      function buildSidePanel(sideName) {
+        const column = document.getElementById('col-' + sideName);
+
+        column.textContent = '';
+        column.append(
+          buildHeroPanel(sideName, sideName === 'left' ? 'Левая сторона' : 'Правая сторона'),
+        );
+        column.append(
+          buildUnitsPanel(sideName, sideName === 'left' ? 'Юниты слева' : 'Юниты справа'),
+        );
+        // The setup error belongs right next to the panels that caused it.
+        column.append(node('div', null, 'error')).id = 'panel-error';
+        if (state.panelError) column.lastChild.textContent = state.panelError;
+      }
+
+      /** One unit card: stack size, every numeric stat and the manual bonuses. */
+      function buildUnitCard(sideName, unit) {
+        const card = node('div', null, 'unit-card');
+        const live = battleUnit(unit.id);
+
+        if (unit.id === state.selectedId) card.classList.add('selected');
+        if (unit.hex === null) card.classList.add('unplaced');
+        if (live && live.aliveCount <= 0) card.classList.add('dead');
+
+        const head = node('div', null, 'unit-head');
+        const remove = node('button', 'Удалить', 'danger');
+
+        head.append(node('strong', unit.id + ' · ' + (unit.name || 'без имени')), remove);
+        card.append(head);
+
+        remove.addEventListener('click', () => {
+          const side = state.sides[sideName];
+          side.units = side.units.filter((item) => item.id !== unit.id);
+          if (state.selectedId === unit.id) state.selectedId = null;
+          buildSidePanel(sideName);
+          scheduleRebuild();
+        });
+
+        card.append(
+          node(
+            'div',
+            'Позиция: ' +
+              (unit.hex ? '(' + unit.hex.x + ', ' + unit.hex.y + ')' : 'не расставлен') +
+              (live ? '  ·  живых: ' + live.aliveCount + '  ·  HP: ' + fmt(live.poolHp) : ''),
+            'hint',
+          ),
+        );
+
+        // A click on the card selects the unit; an unplaced one is then put on
+        // the field by the next click on a cell.
+        card.addEventListener('click', (event) => {
+          if (event.target.tagName === 'INPUT' || event.target.tagName === 'BUTTON') return;
+          handleUnitClick(unit.id);
+        });
+
+        numberRow(
+          card,
+          'unit-' + unit.id + '-stack',
+          'Юнитов в стеке',
+          unit.stackCount,
+          '1',
+          (raw) => {
+            const value = Number(raw);
+            unit.stackCount = Number.isInteger(value) && value >= 1 ? value : 1;
+            scheduleRebuild();
+          },
+        );
+
+        for (const field of UNIT_STAT_FIELDS) {
+          numberRow(
+            card,
+            'unit-' + unit.id + '-' + field.key,
+            field.label,
+            unit.stats[field.key],
+            '0',
+            (raw) => {
+              const value = Number(raw);
+              unit.stats[field.key] = Number.isFinite(value) ? value : 0;
+              scheduleRebuild();
+            },
+          );
+        }
+
+        for (const field of UNIT_EXTRA_FIELDS) {
+          numberRow(
+            card,
+            'unit-' + unit.id + '-' + field.key,
+            field.label,
+            unit[field.key],
+            '0',
+            (raw) => {
+              const value = Number(raw);
+              if (raw === '' || !Number.isFinite(value)) delete unit[field.key];
+              else unit[field.key] = value;
+              scheduleRebuild();
+            },
+          );
+        }
+
+        card.append(buildRetaliationsRow(unit));
+        // Tags are read-only here: they are abilities, not balance numbers.
+        card.append(node('div', 'Теги (только чтение): ' + (unit.tags.join(', ') || 'нет'), 'tags-view'));
+        card.append(buildUnitBonuses(unit));
+
+        return card;
+      }
+
+      /** retaliationsPerRound is a number OR the word "unlimited", so it is a text field. */
+      function buildRetaliationsRow(unit) {
+        const row = node('div', null, 'row');
+        const label = node('label', 'Ответок за раунд (число или «без лимита»)');
+        const input = node('input');
+
+        label.htmlFor = 'unit-' + unit.id + '-ret';
+        input.id = 'unit-' + unit.id + '-ret';
+        input.type = 'text';
+        input.placeholder = '1';
+        input.value =
+          unit.retaliationsPerRound === undefined ? '' : String(unit.retaliationsPerRound);
+        input.addEventListener('change', () => {
+          const raw = input.value.trim();
+
+          if (raw === '') delete unit.retaliationsPerRound;
+          else if (raw === 'без лимита' || raw === 'unlimited') {
+            unit.retaliationsPerRound = 'unlimited';
+          } else {
+            const value = Number(raw);
+            unit.retaliationsPerRound = Number.isFinite(value) ? value : 1;
+          }
+          scheduleRebuild();
+        });
+
+        row.append(label, input);
+
+        return row;
+      }
+
+      /** The collapsible manual bonuses of one unit (they become extraBonuses). */
+      function buildUnitBonuses(unit) {
+        const details = node('details');
+
+        details.append(node('summary', 'Бонусы юнита (ручные)'));
+        details.append(
+          node('div', 'Складываются с бонусами героя и уходят в setup как extraBonuses.', 'hint'),
+        );
+
+        for (const field of BONUS_FIELDS) {
+          numberRow(
+            details,
+            'bonus-' + unit.id + '-' + field.key,
+            field.label,
+            unit.extraBonuses[field.key],
+            '0',
+            (raw) => {
+              const value = Number(raw);
+              if (raw === '' || !Number.isFinite(value) || value === 0) {
+                delete unit.extraBonuses[field.key];
+              } else {
+                unit.extraBonuses[field.key] = value;
+              }
+              scheduleRebuild();
+            },
+          );
+        }
+
+        return details;
+      }
+
+      /* ---------------------------------------------------------------- *
+       * The log: one Russian line per event, newest first.
+       * ---------------------------------------------------------------- */
+
+      /** Adds one event returned by a command. */
+      function addLogRow(event) {
+        state.log.unshift({ event: event, open: false });
+        renderLog();
+      }
+
+      /** A short Russian line for one event. */
+      function logLineFor(event) {
+        if (event.type === 'UnitPlaced') {
+          return event.unitId + ' поставлен на (' + event.hex.x + ', ' + event.hex.y + ')';
+        }
+        if (event.type === 'RoundStarted') return 'Раунд ' + event.round;
+        if (event.type === 'ShotSpent') {
+          return event.unitId + ' потратил выстрел, осталось: ' + event.shotsLeft;
+        }
+        if (event.type === 'UnitDestroyed') return 'Стек ' + event.unitId + ' уничтожен';
+        if (event.type === 'AttackResolved' || event.type === 'RetaliationResolved') {
+          return (
+            (event.type === 'AttackResolved' ? 'Удар: ' : 'Ответка: ') +
+            event.attackerId + ' -> ' + event.defenderId + ' (' + event.kind + '), урон ' +
+            event.damage + ', у защитника ' + event.defenderAliveAfter + ' юнитов'
+          );
+        }
+
+        return event.type;
+      }
+
+      /**
+       * "base (total)" for attack/defense: the unit's own number, then the one
+       * the formula really used. Both come from the server (setup + breakdown);
+       * nothing is recomputed on this page.
+       */
+      function baseAndTotal(base, total) {
+        if (base === undefined || base === null) return fmt(total);
+        return Number(base) === Number(total) ? fmt(total) : fmt(base) + ' (' + fmt(total) + ')';
+      }
+
+      /** The key numbers of the breakdown, in the order the formula applies them. */
+      function breakdownRows(event) {
+        const breakdown = event.breakdown || {};
+        const attacker = findUnit(event.attackerId);
+        const defender = findUnit(event.defenderId);
+        const rows = [];
+
+        // Only the fields the breakdown really has, so nothing is invented.
+        if ('stackRoll' in breakdown) rows.push(['Бросок урона стека', fmt(breakdown.stackRoll)]);
+        if ('flatBonusApplied' in breakdown) {
+          rows.push(['Flat-бонус', fmt(breakdown.flatBonusApplied)]);
+        }
+        if ('afterFlatBonus' in breakdown) {
+          rows.push(['После flat-бонуса', fmt(breakdown.afterFlatBonus)]);
+        }
+        if ('effectiveAttack' in breakdown) {
+          rows.push([
+            'Атака атакующего (база (итог))',
+            baseAndTotal(attacker && attacker.stats.attack, breakdown.effectiveAttack),
+          ]);
+        }
+        if ('effectiveDefense' in breakdown) {
+          rows.push([
+            'Защита защитника (база (итог))',
+            baseAndTotal(defender && defender.stats.defense, breakdown.effectiveDefense),
+          ]);
+        }
+        if ('attackDefenseMultiplier' in breakdown) {
+          rows.push(['Множитель атака/защита', '×' + fmt(breakdown.attackDefenseMultiplier)]);
+        }
+        if ('afterAttackDefense' in breakdown) {
+          rows.push(['После множителя атака/защита', fmt(breakdown.afterAttackDefense)]);
+        }
+        if ('offenseSkillPercentApplied' in breakdown) {
+          rows.push([
+            'Навык нападения/стрельбы',
+            (breakdown.offenseSkillPercentApplied >= 0 ? '+' : '') +
+              fmt(breakdown.offenseSkillPercentApplied) + '%',
+          ]);
+        }
+        if ('afterOffenseSkill' in breakdown) {
+          rows.push(['После навыка нападения', fmt(breakdown.afterOffenseSkill)]);
+        }
+        if ('percentBonusApplied' in breakdown) {
+          rows.push(['Процентный бонус', fmt(breakdown.percentBonusApplied) + '%']);
+        }
+        if ('afterPercentBonus' in breakdown) {
+          rows.push(['После процентного бонуса', fmt(breakdown.afterPercentBonus)]);
+        }
+        if ('luckLevel' in breakdown) {
+          rows.push([
+            'Удача (уровень ' + breakdown.luckLevel + ', шанс ' + fmt(breakdown.luckTriggerChancePercent) + '%)',
+            breakdown.luckTriggered
+              ? 'сработала: ×' + fmt(breakdown.luckMultiplierApplied)
+              : 'не сработала: ×' + fmt(breakdown.luckMultiplierApplied),
+          ]);
+        }
+        if ('afterLuck' in breakdown) rows.push(['После удачи', fmt(breakdown.afterLuck)]);
+        if ('armorReductionApplied' in breakdown) {
+          rows.push(['Доспехи', '−' + fmt(breakdown.armorReductionApplied) + '%']);
+        }
+        if ('afterArmor' in breakdown) rows.push(['После доспехов', fmt(breakdown.afterArmor)]);
+        if ('moraleBonusAttackApplied' in breakdown) {
+          rows.push([
+            'Мораль (доп. ход)',
+            breakdown.moraleBonusAttackApplied
+              ? 'применена: ×' + fmt(breakdown.moraleMultiplier)
+              : 'не применялась: ×' + fmt(breakdown.moraleMultiplier),
+          ]);
+        }
+        if ('afterMoraleBonus' in breakdown) {
+          rows.push(['После морали', fmt(breakdown.afterMoraleBonus)]);
+        }
+        if ('finalDamage' in breakdown) {
+          rows.push(['Итоговый урон (округление half up)', fmt(breakdown.finalDamage)]);
+        }
+
+        return rows;
+      }
+
+      /** The expanded part of a hit: the breakdown table plus the engine notes. */
+      function buildBreakdownDetail(event) {
+        const wrapper = node('div', null, 'log-detail');
+        const notes = event.notes || [];
+        const table = node('table');
+
+        for (const row of breakdownRows(event)) {
+          const tr = node('tr');
+          tr.append(node('td', row[0]), node('td', row[1], 'value'));
+          table.append(tr);
+        }
+        wrapper.append(table);
+
+        if (notes.length > 0) {
+          wrapper.append(node('div', 'Заметки движка:', 'hint'));
+          const list = node('ul', null, 'notes');
+          for (const note of notes) list.append(node('li', note));
+          wrapper.append(list);
+        }
+
+        return wrapper;
+      }
+
+      /** Redraws the log, newest first. */
+      function renderLog() {
+        const target = document.getElementById('log');
+
+        target.textContent = '';
+        if (state.log.length === 0) {
+          target.append(node('div', 'Журнал пуст: ударьте кого-нибудь', 'hint'));
+          return;
+        }
+
+        for (const row of state.log) {
+          const event = row.event;
+          const line = node('div', null, 'log-line');
+          const head = node('div', null, 'log-head');
+
+          head.append(node('span', logLineFor(event)));
+          head.append(
+            node('span', 'раунд ' + (event.round || (state.battle ? state.battle.round : 1)), 'hint'),
+          );
+          line.append(head);
+
+          if (event.type === 'AttackResolved' || event.type === 'RetaliationResolved') {
+            line.classList.add('clickable');
+            if (row.open) line.append(buildBreakdownDetail(event));
+            line.addEventListener('click', () => {
+              row.open = !row.open;
+              renderLog();
+            });
+          }
+
+          target.append(line);
+        }
+      }
+
+      /* ---------------------------------------------------------------- *
+       * The balance block (combat-rules) and the Setup JSON block.
+       * ---------------------------------------------------------------- */
+
+      /** Builds the balance panel: the server defaults plus a reset button. */
+      function buildBalance() {
+        const target = document.getElementById('balance');
+
+        target.append(
+          node(
+            'div',
+            'В setup.rules попадают только значения, отличные от умолчаний. Изменение пересобирает бой.',
+            'hint',
+          ),
+        );
+
+        for (const field of RULE_FIELDS) {
+          const current =
+            state.rulesOverride[field.key] !== undefined
+              ? state.rulesOverride[field.key]
+              : state.combatRules[field.key];
+
+          if (field.mode) {
+            const row = node('div', null, 'row');
+            const label = node('label', field.label);
+            const select = node('select');
+
+            label.htmlFor = 'rule-' + field.key;
+            select.id = 'rule-' + field.key;
+            for (const mode of ['uniform', 'sampled']) {
+              const option = node('option', mode);
+              option.value = mode;
+              select.append(option);
+            }
+            select.value = String(current);
+            select.addEventListener('change', () => {
+              state.rulesOverride[field.key] = select.value;
+              scheduleRebuild();
+            });
+            row.append(label, select);
+            target.append(row);
+            continue;
+          }
+
+          numberRow(
+            target,
+            'rule-' + field.key,
+            field.label,
+            current,
+            String(state.combatRules[field.key]),
+            (raw) => {
+              const value = Number(raw);
+
+              if (raw === '' || !Number.isFinite(value)) delete state.rulesOverride[field.key];
+              else state.rulesOverride[field.key] = value;
+              scheduleRebuild();
+            },
+          );
+        }
+
+        // luckChanceByLevel is a nested object: three plain numbers.
+        target.append(node('div', 'Шанс удачи по уровням, %', 'slot-title'));
+        for (const level of ['1', '2', '3']) {
+          const defaultValue =
+            (state.combatRules.luckChanceByLevel && state.combatRules.luckChanceByLevel[level]) || 0;
+          const stored =
+            state.rulesOverride.luckChanceByLevel &&
+            state.rulesOverride.luckChanceByLevel[level];
+
+          numberRow(
+            target,
+            'rule-luck-' + level,
+            'Уровень ' + level,
+            stored === undefined ? defaultValue : stored,
+            String(defaultValue),
+            (raw) => {
+              const value = Number(raw);
+              const object = state.rulesOverride.luckChanceByLevel || {};
+
+              if (raw === '' || !Number.isFinite(value) || value === defaultValue) {
+                delete object[level];
+              } else {
+                object[level] = value;
+              }
+              if (Object.keys(object).length === 0) delete state.rulesOverride.luckChanceByLevel;
+              else state.rulesOverride.luckChanceByLevel = object;
+              scheduleRebuild();
+            },
+          );
+        }
+
+        const reset = node('button', 'Сбросить к умолчаниям', 'secondary');
+        reset.addEventListener('click', () => {
+          state.rulesOverride = {};
+          buildBalance();
+          scheduleRebuild();
+        });
+        target.append(reset);
+      }
+
+      /* ---------------------------------------------------------------- *
+       * The Setup JSON block and the first render.
+       * ---------------------------------------------------------------- */
+
+      /** Puts the current setup into the textarea (only from the client state). */
+      function refreshSetupText() {
+        const area = document.getElementById('setup-json');
+        const text = JSON.stringify(currentSetup(), null, 2);
+
+        // Never fight the tester: do not rewrite what is being typed.
+        if (document.activeElement !== area) area.value = text;
+      }
+
+      /** Applies a hand-edited setup: the panels are rebuilt from it, then the battle. */
+      async function applySetupFromText() {
+        const area = document.getElementById('setup-json');
+        const errorBox = document.getElementById('setup-error');
+        let setup;
+
+        errorBox.textContent = '';
+        try {
+          setup = JSON.parse(area.value);
+        } catch (error) {
+          errorBox.textContent = 'Не удалось разобрать JSON: ' + error.message;
+          return;
+        }
+
+        for (const sideName of ['left', 'right']) {
+          const side = setup.sides && setup.sides[sideName];
+          if (!side) continue;
+
+          state.sides[sideName].heroEnabled = Boolean(side.hero);
+          if (side.hero) {
+            const stats = side.hero.stats || {};
+            for (const key of ['attack', 'defense', 'spellPower', 'knowledge']) {
+              state.sides[sideName].hero.stats[key] = Number(stats[key]) || 0;
+            }
+            state.sides[sideName].hero.skills = (side.hero.skills || []).slice(0, HERO_SLOTS);
+          }
+          state.sides[sideName].units = (side.units || []).map((unitSetup) => {
+            const base = unitSetup.unit || {};
+            const card = {
+              id: unitSetup.id,
+              name: base.name || unitSetup.id,
+              stats: { ...base.stats },
+              tags: (base.tags || []).slice(),
+              stackCount: unitSetup.stackCount || 1,
+              hex: unitSetup.hex ? { x: unitSetup.hex.x, y: unitSetup.hex.y } : null,
+              extraBonuses: { ...(unitSetup.extraBonuses || {}) },
+            };
+
+            if (base.luckLevel !== undefined) card.luckLevel = base.luckLevel;
+            if (base.shots !== undefined) card.shots = base.shots;
+            if (base.retaliationsPerRound !== undefined) {
+              card.retaliationsPerRound = base.retaliationsPerRound;
+            }
+
+            return card;
+          });
+        }
+
+        state.rulesOverride = setup.rules ? { ...setup.rules } : {};
+        buildSidePanel('left');
+        buildSidePanel('right');
+        buildBalance();
+        renderMode();
+
+        // The server validates the setup while creating the battle.
+        await rebuildBattle();
+        if (!state.panelError) errorBox.textContent = '';
+      }
+
+      /** Copies the setup text to the clipboard. */
+      async function copySetupText() {
+        const area = document.getElementById('setup-json');
+
+        try {
+          await navigator.clipboard.writeText(area.value);
+          setStatus('Setup скопирован в буфер обмена', '', false);
+        } catch (error) {
+          // The clipboard may be blocked: say so instead of failing silently.
+          setStatus(
+            'Не удалось скопировать: выделите текст и скопируйте вручную',
+            String(error && error.message),
+            true,
+          );
+        }
+      }
+
+      /** One call that redraws everything the page owns. */
+      function renderAll() {
+        renderField();
+        renderTools();
+        renderMode();
+        renderSelected();
+        renderLog();
+        refreshSetupText();
+      }
+
+      /** Loads everything the page needs and creates the first battle. */
+      async function init() {
+        const [config, units, heroes] = await Promise.all([
+          apiGet('/debug/battle-config'),
+          apiGet('/debug/units'),
+          apiGet('/debug/heroes'),
+        ]);
+
+        state.battleRules = config.body.battleRules;
+        state.combatRules = config.body.combatRules;
+        state.templates = units.body;
+        state.skills = heroes.body;
+
+        buildTools();
+        buildSidePanel('left');
+        buildSidePanel('right');
+        buildBalance();
+        bindFieldEvents();
+
+        document.getElementById('log-clear').addEventListener('click', () => {
+          state.log = [];
+          renderLog();
+        });
+        document.getElementById('setup-copy').addEventListener('click', copySetupText);
+        document.getElementById('setup-apply').addEventListener('click', applySetupFromText);
+
+        renderAll();
+        await rebuildBattle();
+      }
+
+      init().catch((error) => {
+        setStatus('Не удалось загрузить песочницу: ' + (error && error.message), '', true);
+      });
+    </script>
+  </body>
+</html>

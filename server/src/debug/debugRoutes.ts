@@ -1,11 +1,18 @@
 /**
- * DEV-TOOL HTTP endpoints for the combat sandbox.
+ * DEV-TOOL HTTP endpoints for the combat sandboxes.
  *
  * This is a developer tool, NOT part of the game: no player authorization, no
  * game state, no protocol messages in /shared. It is mounted with a single line
  * in index.ts; in production it is simply not mounted.
  *
  * // DEV-TOOL: not mounted in production (docs/conventions.md)
+ *
+ * Two pages live here:
+ *   /debug/combat-sandbox — the FORMULA page: one strike with the full breakdown,
+ *                           built on POST /debug/attack (kept as it is);
+ *   /debug/battle-sandbox — the BATTLE page: the hex field, units and rounds.
+ * The battle page has no endpoints of its own beyond the page itself: it drives
+ * the battle API in battleDebugRoutes.ts.
  *
  * Why HTTP and not WebSocket: the sandbox is a plain request/response tool
  * ("fill the form -> press the button -> read the breakdown"). HTTP keeps the
@@ -33,8 +40,11 @@ import { combatFixtures } from '../combat/testFixtures';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
-/** The sandbox page: plain HTML, no build step, no PixiJS. */
+/** The formula sandbox page: plain HTML, no build step, no PixiJS. */
 const SANDBOX_PAGE_PATH = path.resolve(currentDir, '../../debug/combat-sandbox.html');
+
+/** The battle sandbox page (added in step 3b, same DEV-TOOL). */
+const BATTLE_SANDBOX_PAGE_PATH = path.resolve(currentDir, '../../debug/battle-sandbox.html');
 
 /** Stats that must be present in a request and must be numbers. */
 const STAT_FIELDS = ['hp', 'attack', 'defense', 'speed', 'damageMin', 'damageMax'] as const;
@@ -318,9 +328,15 @@ export function createDebugRouter(): Router {
   // Only the debug router parses JSON bodies: the game routes stay untouched.
   router.use(express.json({ limit: '64kb' }));
 
-  // The sandbox page itself.
+  // The formula sandbox page itself.
   router.get('/combat-sandbox', (_request, response) => {
     response.sendFile(SANDBOX_PAGE_PATH);
+  });
+
+  // The battle sandbox page. It is a pure client over the battle API
+  // (battleDebugRoutes.ts) and holds no rules of its own.
+  router.get('/battle-sandbox', (_request, response) => {
+    response.sendFile(BATTLE_SANDBOX_PAGE_PATH);
   });
 
   // Preset units for the sandbox dropdown: the very same fixtures the unit tests use,
