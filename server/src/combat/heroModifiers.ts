@@ -14,28 +14,18 @@
  * can never be mistaken for a working bonus (docs/combat-formula.md).
  */
 
+import type { HeroLoadout, HeroSkillSlot, HeroStats } from '@de-jija/shared';
+
 import { clampLuckLevel } from './resolveAttack';
 import { findSkill, type Skill, type SkillTarget, type SkillsData } from './skills';
 
-/** A hero's base stats. spellPower and knowledge are placeholders for a future spell system. */
-export type HeroStats = {
-  attack: number;
-  defense: number;
-  spellPower: number;
-  knowledge: number;
-};
-
-/** One learned skill and its level (1 = basic, 2 = advanced, 3 = expert). */
-export type HeroSkillSlot = {
-  skillId: string;
-  level: 1 | 2 | 3;
-};
-
-/** What a hero brings to a battle: stats plus up to 6 skills (no repeats). */
-export type HeroLoadout = {
-  stats: HeroStats;
-  skills: HeroSkillSlot[];
-};
+/**
+ * The hero types live in /shared (HeroStats, HeroSkillSlot, HeroLoadout) so the very
+ * same type describes a hero inside BattleSetup and inside the server aggregator —
+ * there must be no second, "almost the same" copy. They are re-exported here because
+ * the rest of the server already imports them from this module.
+ */
+export type { HeroLoadout, HeroSkillSlot, HeroStats };
 
 /** Everything a hero brings to a battle, already aggregated and clamped. */
 export type HeroModifiers = {

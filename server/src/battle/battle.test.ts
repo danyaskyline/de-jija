@@ -7,7 +7,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import type { BattleSetup, CombatUnit, Hex } from '@de-jija/shared';
+import type { BattleSetup, CombatBonuses, CombatUnit, Hex } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules } from '../combat/combatRules';
 import { initSkills, type SkillsData } from '../combat/skills';
@@ -45,15 +45,34 @@ function unit(base: CombatUnit, changes: Partial<CombatUnit> = {}): CombatUnit {
 
 /** A simple two-sided setup; every unit starts unplaced. */
 function setupWith(
-  left: { id: string; unit: CombatUnit; stackCount?: number; hex?: Hex | null }[],
-  right: { id: string; unit: CombatUnit; stackCount?: number; hex?: Hex | null }[],
+  left: {
+    id: string;
+    unit: CombatUnit;
+    stackCount?: number;
+    hex?: Hex | null;
+    extraBonuses?: Partial<CombatBonuses>;
+  }[],
+  right: {
+    id: string;
+    unit: CombatUnit;
+    stackCount?: number;
+    hex?: Hex | null;
+    extraBonuses?: Partial<CombatBonuses>;
+  }[],
   placementMode: 'free' | 'startZone' = 'free',
 ): BattleSetup {
-  const toUnitSetup = (entry: { id: string; unit: CombatUnit; stackCount?: number; hex?: Hex | null }) => ({
+  const toUnitSetup = (entry: {
+    id: string;
+    unit: CombatUnit;
+    stackCount?: number;
+    hex?: Hex | null;
+    extraBonuses?: Partial<CombatBonuses>;
+  }): BattleSetup['sides']['left']['units'][number] => ({
     id: entry.id,
     unit: entry.unit,
     stackCount: entry.stackCount ?? 1,
     hex: entry.hex ?? null,
+    ...(entry.extraBonuses === undefined ? {} : { extraBonuses: entry.extraBonuses }),
   });
 
   return {
@@ -379,6 +398,89 @@ describe('createBattle — a bad setup is refused, never thrown', () => {
     setup.rules = { notARule: 1 };
 
     expect(refuseOf(setup).message).toMatch(/неизвестный ключ правил/);
+  });
+
+  it('a rules override is applied on top of the global combat rules', () => {
+    const setup = setupWith(
+      [{ id: 'l1', unit: unit(swordsman), hex: { x: 3, y: 4 } }],
+      [{ id: 'r1', unit: unit(goblin), hex: { x: 4, y: 4 } }],
+    );
+    // Make the attack advantage much stronger for this battle only.
+    setup.rules = { attackAdvantagePercentPerPoint: 20 };
+
+    const result = makeBattle(setup).attack('l1', 'r1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const event = result.events[0] as { damage: number; breakdown: { effectiveAttack: number } };
+
+      expect(event.breakdown.effectiveAttack).toBe(6);
+      // attack 6 vs defense 3 -> 1 + 0.20 * 3 = 1.6; roll 10 -> 16
+      expect(event.damage).toBe(16);
+    }
+  });
+
+  // Every key of CombatRules. Each is overridden ALONE and a real hit is resolved.
+  //
+  // The exchange below is deliberately simple (one unit, min roll, no luck, no armor,
+  // no morale, no hero): only a few keys can change ITS number. The rest must leave
+  // the damage exactly as it is — that is the real proof that an override of one key
+  // does not silently touch the other ten.
+  it.each([
+    // key                              value                  changes this hit?
+    ['attackAdvantagePercentPerPoint', 20, true],
+    ['attackAdvantageCapPercent', 800, false], // the cap is x4 and is not reached here
+    ['defensePenaltyPercentPerPoint', 5, false], // attack > defense: unused
+    ['defensePenaltyFloorPercent', 50, false], // the floor is not reached here
+    ['luckChanceByLevel', { '1': 50, '2': 60, '3': 70 }, false], // luckLevel is 0
+    ['luckPositiveMultiplier', 2, false], // luck never triggers at level 0
+    ['luckNegativeMultiplier', 0.5, false], // same
+    ['moraleBonusAttackMultiplier', 0.5, false], // not a morale extra attack
+    ['minimumDamage', 7, false], // this hit already deals more than 7
+    ['damageRollMode', 'sampled', false], // one unit: both modes roll the same range
+    ['damageRollSamples', 3, false], // k = min(1, 3) = 1: identical
+  ] as const)('overriding %s alone changes only what it should', (key, value, changesHit) => {
+    const build = (): BattleSetup =>
+      setupWith(
+        [{ id: 'l1', unit: unit(swordsman), hex: { x: 3, y: 4 } }],
+        [{ id: 'r1', unit: unit(goblin), hex: { x: 4, y: 4 } }],
+      );
+
+    // The baseline: no override at all.
+    const plain = makeBattle(build()).attack('l1', 'r1', {
+      fixedDamageRoll: 0,
+      fixedLuckRoll: 0,
+    });
+
+    // The same fight with exactly ONE key overridden.
+    const tweakedSetup = build();
+    tweakedSetup.rules = { [key]: value };
+    const tweaked = makeBattle(tweakedSetup).attack('l1', 'r1', {
+      fixedDamageRoll: 0,
+      fixedLuckRoll: 0,
+    });
+
+    expect(plain.ok).toBe(true);
+    expect(tweaked.ok).toBe(true);
+    if (!plain.ok || !tweaked.ok) {
+      return;
+    }
+
+    const plainHit = plain.events[0] as { damage: number; breakdown: unknown };
+    const tweakedHit = tweaked.events[0] as { damage: number; breakdown: unknown };
+
+    // Baseline: roll 10, attack 6 vs defense 3 -> 1.15 -> 11.5 -> 12.
+    expect(plainHit.damage).toBe(12);
+
+    if (changesHit) {
+      // attack 6 vs defense 3 -> 1 + 0.20 * 3 = 1.6 -> 16
+      expect(tweakedHit.damage).toBe(16);
+      expect(tweakedHit.damage).not.toBe(plainHit.damage);
+    } else {
+      // The key was accepted, but it has no business changing THIS hit.
+      expect(tweakedHit.damage).toBe(plainHit.damage);
+      expect(tweakedHit.breakdown).toEqual(plainHit.breakdown);
+    }
   });
 });
 
@@ -1017,6 +1119,108 @@ describe('getValidTargets', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.targets).toEqual([]);
+    }
+  });
+
+  it('a shooter sees a neighbour as melee and a distant one as ranged AT THE SAME TIME', () => {
+    const battle = makeBattle(
+      setupWith(
+        [{ id: 'l1', unit: unit(archer), hex: { x: 3, y: 4 } }],
+        [
+          { id: 'near', unit: unit(goblin), hex: { x: 4, y: 4 } }, // distance 1
+          { id: 'far', unit: unit(goblin), hex: { x: 6, y: 4 } }, // distance 3
+        ],
+      ),
+    );
+
+    const result = battle.getValidTargets('l1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const byId = new Map(result.targets.map((target) => [target.unitId, target]));
+
+      // The neighbour is a melee target (and costs no shot), the far one ranged.
+      expect(byId.get('near')).toEqual({ unitId: 'near', kind: 'melee', distance: 1 });
+      expect(byId.get('far')).toEqual({ unitId: 'far', kind: 'ranged', distance: 3 });
+    }
+  });
+
+  it('a shooter sees several distant targets at their own distances', () => {
+    const battle = makeBattle(
+      setupWith(
+        [{ id: 'l1', unit: unit(archer), hex: { x: 3, y: 4 } }],
+        [
+          { id: 'd2', unit: unit(goblin), hex: { x: 5, y: 4 } }, // distance 2
+          { id: 'd3', unit: unit(goblin), hex: { x: 6, y: 4 } }, // distance 3
+          { id: 'd9', unit: unit(goblin), hex: { x: 9, y: 9 } }, // distance 9
+        ],
+      ),
+    );
+
+    const result = battle.getValidTargets('l1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Ranged reach is not limited in version 1: every living enemy is a target,
+      // each with its real distance.
+      expect(result.targets).toEqual([
+        { unitId: 'd2', kind: 'ranged', distance: 2 },
+        { unitId: 'd3', kind: 'ranged', distance: 3 },
+        { unitId: 'd9', kind: 'ranged', distance: 9 },
+      ]);
+    }
+  });
+
+  it('a shooter out of shots still sees the neighbour, but no distant target', () => {
+    // A tanky target, so the archer really runs out of shots instead of the target dying.
+    const battle = makeBattle(
+      setupWith(
+        [{ id: 'l1', unit: unit(archer), hex: { x: 3, y: 4 } }],
+        [
+          { id: 'near', unit: unit(blackDragon), hex: { x: 4, y: 4 } },
+          { id: 'far', unit: unit(blackDragon), hex: { x: 6, y: 4 } },
+        ],
+      ),
+    );
+
+    for (let shot = 0; shot < 12; shot++) {
+      battle.attack('l1', 'far', { fixedDamageRoll: 0, fixedLuckRoll: 0 });
+    }
+    expect(stateOf(battle, 'l1').shotsLeft).toBe(0);
+
+    const result = battle.getValidTargets('l1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Without shots the far enemy is unreachable, the neighbour still is: it is
+      // a melee fight that costs nothing.
+      expect(result.targets).toEqual([{ unitId: 'near', kind: 'melee', distance: 1 }]);
+    }
+  });
+
+  it('never lists a dead or an unplaced enemy', () => {
+    const battle = makeBattle(
+      setupWith(
+        // An archer with a big flat bonus: it kills the neighbour goblin in one
+        // melee hit (50 damage over its 50 HP) and still has shots for the far one.
+        [{ id: 'l1', unit: unit(archer), hex: { x: 3, y: 4 }, extraBonuses: { flatDamageBonus: 45 } }],
+        [
+          { id: 'dies', unit: unit(goblin), hex: { x: 4, y: 4 } },
+          { id: 'unplaced', unit: unit(goblin), hex: null },
+          { id: 'alive', unit: unit(goblin), hex: { x: 6, y: 4 } },
+        ],
+      ),
+    );
+
+    battle.attack('l1', 'dies', { fixedDamageRoll: 0, fixedLuckRoll: 0 });
+    expect(stateOf(battle, 'dies').aliveCount).toBe(0);
+
+    const result = battle.getValidTargets('l1');
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // 'dies' is destroyed and 'unplaced' has no cell, so neither can be a target.
+      expect(result.targets).toEqual([{ unitId: 'alive', kind: 'ranged', distance: 3 }]);
     }
   });
 

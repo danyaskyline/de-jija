@@ -22,6 +22,7 @@ import { WebSocketServer } from 'ws';
 import type { ClientMessage, PongMessage } from '@de-jija/shared';
 
 import { initBattleRules, DEFAULT_BATTLE_RULES_PATH } from './battle/battleRules';
+import { createBattleDebugRouter } from './debug/battleDebugRoutes';
 import { DEFAULT_COMBAT_RULES_PATH, initCombatRules } from './combat/combatRules';
 import { DEFAULT_SKILLS_PATH, initSkills } from './combat/skills';
 import { createDebugRouter } from './debug/debugRoutes';
@@ -73,15 +74,18 @@ if (existsSync(CLIENT_DIST)) {
   console.log('[http] client/dist not found — run "npm run dev:client" for the dev client');
 }
 
-// DEV-TOOL: the combat sandbox (server/debug/combat-sandbox.html + POST /debug/attack).
-// It is a developer tool: separate route, no player authorization, no game state, and
-// it never touches the game protocol in /shared. Not mounted in production.
+// DEV-TOOL: the combat sandbox (server/debug/combat-sandbox.html + POST /debug/attack)
+// and the battle API (/debug/battles/...). It is a developer tool: separate routes,
+// no player authorization, no game state, and it never touches the game protocol
+// in /shared. Not mounted in production.
 // // DEV-TOOL: not mounted in production (docs/conventions.md)
 if (process.env.NODE_ENV === 'production') {
   console.log('[debug] combat sandbox is disabled (NODE_ENV=production)');
 } else {
   app.use('/debug', createDebugRouter());
+  app.use('/debug', createBattleDebugRouter());
   console.log(`[debug] combat sandbox: http://${HOST}:${PORT}/debug/combat-sandbox`);
+  console.log(`[debug] battle API:     http://${HOST}:${PORT}/debug/battles`);
 }
 
 const httpServer = createServer(app);

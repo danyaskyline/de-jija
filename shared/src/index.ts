@@ -173,8 +173,12 @@ export type UnitSetup = {
   extraBonuses?: Partial<CombatBonuses>;
 };
 
-/** A hero's base stats (structural copy of the server's HeroStats). */
-export type BattleHeroStats = {
+/**
+ * A hero's base stats. spellPower and knowledge are placeholders for a future spell
+ * system. The type lives in /shared so the same one describes a hero in the setup
+ * (BattleSetup) and in the server aggregator (aggregateHeroModifiers).
+ */
+export type HeroStats = {
   attack: number;
   defense: number;
   spellPower: number;
@@ -182,25 +186,21 @@ export type BattleHeroStats = {
 };
 
 /** One learned skill and its level (1 = basic, 2 = advanced, 3 = expert). */
-export type BattleHeroSkillSlot = {
+export type HeroSkillSlot = {
   skillId: string;
   level: 1 | 2 | 3;
 };
 
-/**
- * A hero brings to the battle (structural copy of the server's HeroLoadout).
- * It is declared here as plain data so BattleSetup stays serialisable; the
- * server validates it with aggregateHeroModifiers.
- */
-export type BattleHeroLoadout = {
-  stats: BattleHeroStats;
-  skills: BattleHeroSkillSlot[];
+/** What a hero brings to a battle: stats plus up to 6 skills (no repeats). */
+export type HeroLoadout = {
+  stats: HeroStats;
+  skills: HeroSkillSlot[];
 };
 
 /** Everything one side brings into the battle. */
 export type SideSetup = {
   /** null = a mob side with no hero. */
-  hero: BattleHeroLoadout | null;
+  hero: HeroLoadout | null;
   units: UnitSetup[];
 };
 
