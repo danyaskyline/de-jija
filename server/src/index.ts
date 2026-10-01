@@ -22,6 +22,7 @@ import { WebSocketServer } from 'ws';
 import type { ClientMessage, PongMessage } from '@de-jija/shared';
 
 import { DEFAULT_COMBAT_RULES_PATH, initCombatRules } from './combat/combatRules';
+import { DEFAULT_SKILLS_PATH, initSkills } from './combat/skills';
 import { createDebugRouter } from './debug/debugRoutes';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -36,17 +37,21 @@ const PORT = Number(process.env.PORT ?? 3000);
 const CLIENT_DIST = path.resolve(currentDir, '../../client/dist');
 
 /**
- * Balance rules are loaded exactly once, here, before anything starts listening.
- * A broken config/combat-rules.json must stop the server with a readable message
- * instead of letting it run with half-loaded balance data (docs/decisions.md, 012).
+ * Balance rules and skill data are loaded exactly once, here, before anything starts
+ * listening. A broken config file must stop the server with a readable message instead
+ * of letting it run with half-loaded data (docs/decisions.md, 012).
  */
 try {
   const rules = initCombatRules();
 
   console.log(`[config] combat rules loaded from ${DEFAULT_COMBAT_RULES_PATH}`);
   console.log(`[config] ${JSON.stringify(rules)}`);
+
+  const skills = initSkills();
+
+  console.log(`[config] ${skills.skills.length} skills loaded from ${DEFAULT_SKILLS_PATH}`);
 } catch (error) {
-  console.error('[config] НЕ УДАЛОСЬ ЗАГРУЗИТЬ ПРАВИЛА БОЯ — сервер не стартует:');
+  console.error('[config] НЕ УДАЛОСЬ ЗАГРУЗИТЬ КОНФИГ — сервер не стартует:');
   console.error(`[config] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
@@ -60,11 +65,10 @@ if (existsSync(CLIENT_DIST)) {
   console.log('[http] client/dist not found — run "npm run dev:client" for the dev client');
 }
 
-// DEBUG-ONLY: the combat sandbox (server/debug/combat-sandbox.html + POST /debug/attack).
+// DEV-TOOL: the combat sandbox (server/debug/combat-sandbox.html + POST /debug/attack).
 // It is a developer tool: separate route, no player authorization, no game state, and
-// it never touches the game protocol in /shared. Disabled in production, and easy to
-// delete: remove this block and server/src/debug/.
-// // DEBUG-ONLY, remove before Phase 1 (docs/conventions.md)
+// it never touches the game protocol in /shared. Not mounted in production.
+// // DEV-TOOL: not mounted in production (docs/conventions.md)
 if (process.env.NODE_ENV === 'production') {
   console.log('[debug] combat sandbox is disabled (NODE_ENV=production)');
 } else {

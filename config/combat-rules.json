@@ -12,5 +12,6 @@
   "luckNegativeMultiplier": 0.75,
   "moraleBonusAttackMultiplier": 0.8,
   "minimumDamage": 1,
+  "damageRollMode": "uniform",
   "damageRollSamples": 10
 }

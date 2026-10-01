@@ -41,6 +41,7 @@ const validRules = {
   luckNegativeMultiplier: 0.75,
   moraleBonusAttackMultiplier: 0.8,
   minimumDamage: 1,
+  damageRollMode: 'uniform',
   damageRollSamples: 10,
 };
 
@@ -70,6 +71,8 @@ describe('combat rules loader', () => {
     expect(rules.luckNegativeMultiplier).toBe(0.75);
     expect(rules.moraleBonusAttackMultiplier).toBe(0.8);
     expect(rules.minimumDamage).toBe(1);
+    expect(rules.damageRollMode).toBe('uniform');
+    expect(rules.damageRollSamples).toBe(10);
     expect(DEFAULT_COMBAT_RULES_PATH.endsWith(path.join('config', 'combat-rules.json'))).toBe(true);
   });
 
@@ -130,6 +133,32 @@ describe('combat rules loader', () => {
 
     expect(() => loadCombatRules(filePath)).toThrowError(
       /поле damageRollSamples должно быть целым числом не меньше 1/,
+    );
+  });
+
+  it('reports a missing damageRollMode field by name', () => {
+    const filePath = writeRulesFile(
+      'missing-roll-mode.json',
+      JSON.stringify(rulesWithout('damageRollMode')),
+    );
+
+    expect(() => loadCombatRules(filePath)).toThrowError(
+      /отсутствует обязательное поле damageRollMode/,
+    );
+  });
+
+  it.each([
+    ['an unknown string', 'random'],
+    ['a number', 5],
+    ['a boolean', true],
+  ])('reports damageRollMode that is %s with a clear message', (_label, value) => {
+    const filePath = writeRulesFile(
+      `bad-roll-mode-${_label.replace(/\s+/g, '-')}.json`,
+      JSON.stringify({ ...validRules, damageRollMode: value }),
+    );
+
+    expect(() => loadCombatRules(filePath)).toThrowError(
+      /поле damageRollMode должно быть строкой "uniform" или "sampled"/,
     );
   });
 

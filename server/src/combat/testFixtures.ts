@@ -12,6 +12,8 @@
 
 import type { AbilityTag, CombatUnit, UnitStats } from '@de-jija/shared';
 
+import type { HeroLoadout } from './heroModifiers';
+
 /** A ready-made unit used by tests and by the sandbox preset list. */
 export type CombatFixture = {
   id: string;
@@ -104,3 +106,52 @@ export const swordsman = fixtureUnit('swordsman');
 export const goblin = fixtureUnit('goblin');
 export const mage = fixtureUnit('mage');
 export const blackDragon = fixtureUnit('black_dragon');
+
+/* -------------------------------------------------------------------------- *
+ * TEST-ONLY hero fixtures.
+ *
+ * Same idea as the unit fixtures above: one source for both the hero unit tests and
+ * the sandbox (GET /debug/heroes). These are NOT game content either — real heroes
+ * will be DATA (stats + learned skills), read by id (docs/decisions.md, 016).
+ * -------------------------------------------------------------------------- */
+
+/** A ready-made hero (stats + skills) used by tests and the sandbox. */
+export type HeroFixture = {
+  id: string;
+  name: string;
+  loadout: HeroLoadout;
+};
+
+/** All hero fixtures in one place. */
+export const heroFixtures: HeroFixture[] = [
+  {
+    id: 'hero_might',
+    name: 'Герой-силач (Нападение эксп., Доспехи продв.)',
+    loadout: {
+      stats: { attack: 10, defense: 10, spellPower: 1, knowledge: 1 },
+      skills: [
+        { skillId: 'offense', level: 3 },
+        { skillId: 'armorer', level: 2 },
+      ],
+    },
+  },
+  {
+    id: 'hero_shooter',
+    name: 'Герой-стрелок (Стрельба эксп.)',
+    loadout: {
+      stats: { attack: 5, defense: 8, spellPower: 1, knowledge: 1 },
+      skills: [{ skillId: 'archery', level: 3 }],
+    },
+  },
+  {
+    id: 'hero_mage',
+    name: 'Герой-маг (Волшебство эксп., Сопротивление нач.)',
+    loadout: {
+      stats: { attack: 2, defense: 4, spellPower: 10, knowledge: 10 },
+      skills: [
+        { skillId: 'sorcery', level: 3 },
+        { skillId: 'resistance', level: 1 },
+      ],
+    },
+  },
+];

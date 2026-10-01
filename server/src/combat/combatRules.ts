@@ -50,9 +50,18 @@ export type CombatRules = {
   /** The smallest amount of damage a hit may ever deal, e.g. 1. */
   minimumDamage: number;
   /**
-   * How many damage rolls are drawn for a stack: k = min(stackCount, damageRollSamples).
-   * The k rolls are summed and scaled by stackCount/k, so the roll cost stays constant
-   * no matter how big the stack is (docs/decisions.md, 014).
+   * How the stack damage roll is drawn (docs/decisions.md, 015):
+   *   "uniform" — one uniform integer roll over the whole stack range
+   *               damageMin*stackCount .. damageMax*stackCount (the flat default);
+   *   "sampled" — k = min(stackCount, damageRollSamples) independent per-unit rolls,
+   *               summed and scaled (docs/decisions.md, 014).
+   */
+  damageRollMode: 'uniform' | 'sampled';
+  /**
+   * How many damage rolls are drawn for a stack in "sampled" mode:
+   * k = min(stackCount, damageRollSamples). The k rolls are summed and scaled by
+   * stackCount/k, so the roll cost stays constant no matter how big the stack is
+   * (docs/decisions.md, 014).
    */
   damageRollSamples: number;
 };
@@ -134,6 +143,16 @@ export function loadCombatRules(filePath: string = DEFAULT_COMBAT_RULES_PATH): C
     );
   }
 
+  // damageRollMode must be present and be exactly one of the two supported modes.
+  if (!('damageRollMode' in source)) {
+    throw new Error(`${shownPath}: отсутствует обязательное поле damageRollMode`);
+  }
+  if (source.damageRollMode !== 'uniform' && source.damageRollMode !== 'sampled') {
+    throw new Error(
+      `${shownPath}: поле damageRollMode должно быть строкой "uniform" или "sampled", а получено: ${JSON.stringify(source.damageRollMode)}`,
+    );
+  }
+
   for (const field of OBJECT_FIELDS) {
     if (!(field in source)) {
       throw new Error(`${shownPath}: отсутствует обязательное поле ${field}`);
@@ -177,6 +196,7 @@ export function loadCombatRules(filePath: string = DEFAULT_COMBAT_RULES_PATH): C
     luckNegativeMultiplier: source.luckNegativeMultiplier as number,
     moraleBonusAttackMultiplier: source.moraleBonusAttackMultiplier as number,
     minimumDamage: source.minimumDamage as number,
+    damageRollMode: source.damageRollMode as 'uniform' | 'sampled',
     damageRollSamples: source.damageRollSamples as number,
   };
 }

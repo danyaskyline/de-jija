@@ -1,11 +1,11 @@
 /**
- * DEBUG-ONLY HTTP endpoints for the combat sandbox.
+ * DEV-TOOL HTTP endpoints for the combat sandbox.
  *
  * This is a developer tool, NOT part of the game: no player authorization, no
  * game state, no protocol messages in /shared. It is mounted with a single line
- * in index.ts, so removing it later is a one-line change.
+ * in index.ts; in production it is simply not mounted.
  *
- * // DEBUG-ONLY, remove before Phase 1 (docs/conventions.md)
+ * // DEV-TOOL: not mounted in production (docs/conventions.md)
  *
  * Why HTTP and not WebSocket: the sandbox is a plain request/response tool
  * ("fill the form -> press the button -> read the breakdown"). HTTP keeps the
@@ -20,8 +20,15 @@ import express, { type Router } from 'express';
 
 import type { AbilityTag, CombatUnit, UnitStats } from '@de-jija/shared';
 
-import { combatFixtures } from '../combat/testFixtures';
+import {
+  aggregateHeroModifiers,
+  applyHeroModifiersToContext,
+  type HeroLoadout,
+  type HeroModifiers,
+} from '../combat/heroModifiers';
 import { resolveAttack, type AttackContext } from '../combat/resolveAttack';
+import { getSkills } from '../combat/skills';
+import { combatFixtures, heroFixtures } from '../combat/testFixtures';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +37,9 @@ const SANDBOX_PAGE_PATH = path.resolve(currentDir, '../../debug/combat-sandbox.h
 
 /** Stats that must be present in a request and must be numbers. */
 const STAT_FIELDS = ['hp', 'attack', 'defense', 'speed', 'damageMin', 'damageMax'] as const;
+
+/** Hero stats that must be present in a hero block and must be whole numbers >= 0. */
+const HERO_STAT_FIELDS = ['attack', 'defense', 'spellPower', 'knowledge'] as const;
 
 /** Tags the sandbox may send; anything else is dropped instead of trusted. */
 const KNOWN_TAGS: readonly AbilityTag[] = [
@@ -53,7 +63,14 @@ const CONTEXT_NUMBER_FIELDS = [
   'defensiveArmorReductionPercent',
 ] as const;
 
-type ParsedRequest = { attacker: CombatUnit; defender: CombatUnit; context: AttackContext };
+type ParsedRequest = {
+  attacker: CombatUnit;
+  defender: CombatUnit;
+  context: AttackContext;
+  /** Optional hero blocks (docs/decisions.md, 016); absent means "no hero". */
+  attackerHero?: HeroLoadout;
+  defenderHero?: HeroLoadout;
+};
 type ParseError = { error: string };
 
 /** Reads one unit sent by the sandbox form. Returns a readable error instead of throwing. */
@@ -128,6 +145,10 @@ function parseContext(value: unknown): AttackContext {
     }
   }
 
+  if (raw.attackKind === 'melee' || raw.attackKind === 'ranged') {
+    context.attackKind = raw.attackKind;
+  }
+
   if (raw.isMoraleBonusAttack === true) {
     context.isMoraleBonusAttack = true;
   }
@@ -142,6 +163,52 @@ function parseContext(value: unknown): AttackContext {
   }
 
   return context;
+}
+
+/**
+ * Reads an optional hero block (HeroLoadout). Deep validation (unknown skill, repeat,
+ * level, stat range) is done by aggregateHeroModifiers, whose readable errors the route
+ * turns into HTTP 400 (docs/decisions.md, 016).
+ */
+function parseHero(value: unknown, role: string): { loadout: HeroLoadout } | ParseError {
+  if (typeof value !== 'object' || value === null) {
+    return { error: `${role}: ожидался объект-герой (HeroLoadout)` };
+  }
+
+  const raw = value as Record<string, unknown>;
+  const rawStats = raw.stats;
+
+  if (typeof rawStats !== 'object' || rawStats === null) {
+    return { error: `${role}: отсутствует объект stats у героя` };
+  }
+
+  const statsSource = rawStats as Record<string, unknown>;
+  const stats: HeroLoadout['stats'] = { attack: 0, defense: 0, spellPower: 0, knowledge: 0 };
+
+  for (const field of HERO_STAT_FIELDS) {
+    const fieldValue = statsSource[field];
+
+    if (typeof fieldValue !== 'number' || !Number.isInteger(fieldValue) || fieldValue < 0) {
+      return { error: `${role}.stats.${field}: ожидалось целое число не меньше 0` };
+    }
+
+    stats[field] = fieldValue;
+  }
+
+  const rawSkills = Array.isArray(raw.skills) ? raw.skills : [];
+  const skills = rawSkills.map((slot) => {
+    const slotRaw = (typeof slot === 'object' && slot !== null ? slot : {}) as Record<
+      string,
+      unknown
+    >;
+
+    return {
+      skillId: typeof slotRaw.skillId === 'string' ? slotRaw.skillId : '',
+      level: (typeof slotRaw.level === 'number' ? slotRaw.level : 0) as 1 | 2 | 3,
+    };
+  });
+
+  return { loadout: { stats, skills } };
 }
 
 /** Validates the whole sandbox request body. */
@@ -161,7 +228,25 @@ function parseRequestBody(body: unknown): ParsedRequest | ParseError {
     return defender;
   }
 
-  return { attacker: attacker.unit, defender: defender.unit, context: parseContext(raw.context) };
+  const attackerHero =
+    raw.attackerHero === undefined ? null : parseHero(raw.attackerHero, 'attackerHero');
+  if (attackerHero && 'error' in attackerHero) {
+    return attackerHero;
+  }
+
+  const defenderHero =
+    raw.defenderHero === undefined ? null : parseHero(raw.defenderHero, 'defenderHero');
+  if (defenderHero && 'error' in defenderHero) {
+    return defenderHero;
+  }
+
+  return {
+    attacker: attacker.unit,
+    defender: defender.unit,
+    context: parseContext(raw.context),
+    attackerHero: attackerHero ? attackerHero.loadout : undefined,
+    defenderHero: defenderHero ? defenderHero.loadout : undefined,
+  };
 }
 
 /** Builds the debug router. Mounted at /debug in index.ts. */
@@ -182,6 +267,11 @@ export function createDebugRouter(): Router {
     response.json(combatFixtures);
   });
 
+  // Preset heroes (stats + skills) for the sandbox (docs/decisions.md, 016).
+  router.get('/heroes', (_request, response) => {
+    response.json(heroFixtures);
+  });
+
   // Resolves one attack and returns the full breakdown: the tool behind the page.
   router.post('/attack', (request, response) => {
     const parsed = parseRequestBody(request.body);
@@ -191,10 +281,34 @@ export function createDebugRouter(): Router {
       return;
     }
 
+    let context = parsed.context;
+    let aggregatedModifiers: { attacker: HeroModifiers; defender: HeroModifiers } | undefined;
+
+    // Optional hero blocks: when given, the heroes' modifiers are folded into the context
+    // (attack/offense/luck from the attacker's hero, defense/armor from the defender's).
+    if (parsed.attackerHero || parsed.defenderHero) {
+      try {
+        const skills = getSkills();
+        const attackerMods = aggregateHeroModifiers(parsed.attackerHero, skills);
+        const defenderMods = aggregateHeroModifiers(parsed.defenderHero, skills);
+
+        context = applyHeroModifiersToContext(context, attackerMods, defenderMods);
+        aggregatedModifiers = { attacker: attackerMods, defender: defenderMods };
+      } catch (error) {
+        response
+          .status(400)
+          .json({ error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    }
+
     console.log(
       `[debug] attack: ${parsed.attacker.name} (${parsed.attacker.tags.join(', ') || 'no tags'}) -> ${parsed.defender.name}`,
     );
-    response.json(resolveAttack(parsed.attacker, parsed.defender, parsed.context));
+
+    const result = resolveAttack(parsed.attacker, parsed.defender, context);
+
+    response.json(aggregatedModifiers ? { ...result, aggregatedModifiers } : result);
   });
 
   return router;

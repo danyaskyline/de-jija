@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DEBUG — песочница боя (de-jija)</title>
+    <title>DEV-TOOL — песочница боя (de-jija)</title>
     <style>
       :root {
         color-scheme: dark;
@@ -170,13 +170,14 @@
     </style>
   </head>
   <body>
-    <h1>DEBUG: песочница боя <span class="hint">de-jija</span></h1>
+    <h1>DEV-TOOL: песочница боя <span class="hint">de-jija</span></h1>
 
     <div class="banner">
-      <strong>Отладочный инструмент разработчика.</strong>
+      <strong>Инструмент разработчика (DEV-TOOL).</strong>
       Отдельный роут <code>/debug/combat-sandbox</code>: не часть игрового клиента, не связан с авторизацией персонажа,
       ничего не сохраняет. Вызывает ту же чистую функцию <code>resolveAttack</code>, что и реальный бой, и показывает
-      каждый промежуточный шаг расчёта. В <code>NODE_ENV=production</code> роут отключён. Удалить перед Phase 1.
+      каждый промежуточный шаг расчёта. В <code>NODE_ENV=production</code> роут НЕ монтируется
+      (DEV-TOOL: not mounted in production).
     </div>
 
     <div class="layout">
@@ -193,6 +194,13 @@
         <h2>Удар: параметры и результат</h2>
         <div id="context-fields"></div>
         <div class="row">
+          <label for="attackKind">Тип атаки (attackKind) — какое мастерство нападения применять</label>
+          <select id="attackKind">
+            <option value="melee">ближняя</option>
+            <option value="ranged">дальняя</option>
+          </select>
+        </div>
+        <div class="row">
           <label for="isMoraleBonusAttack">isMoraleBonusAttack — этот удар из-за доп. хода морали</label>
           <input id="isMoraleBonusAttack" type="checkbox" />
         </div>
@@ -206,8 +214,11 @@
           <span class="hint">Нажмите «Ударить», чтобы увидеть результат.</span>
         </div>
         <p class="hint">
-          <code>heroAttackBonus</code> и <code>heroDefenseBonus</code> уже участвуют в множителе атаки/защиты. Мастерства
-          героя и defensiveArmorReductionPercent — заглушки на 0, в формулу не входят.
+          <code>heroAttackBonus</code> и <code>heroDefenseBonus</code> участвуют в множителе атаки/защиты. Мастерства
+          <code>meleeOffenseBonusPercent</code> / <code>rangedOffenseBonusPercent</code> и
+          <code>defensiveArmorReductionPercent</code> теперь РАБОТАЮТ (нападение — по типу атаки выше; доспехи — только
+          против физической атаки). Заглушкой остался только <code>magicOffenseBonusPercent</code> (магия). Отдельный
+          интерфейс героев в этой форме не делаем — это шаг Б.
         </p>
       </section>
 
@@ -222,7 +233,7 @@
     </div>
 
     <script>
-      // DEBUG-ONLY page logic: builds the forms and calls POST /debug/attack.
+      // DEV-TOOL page logic: builds the forms and calls POST /debug/attack.
       // Plain JavaScript on purpose: this page is a developer tool, not the game.
 
       /** CombatUnit fields shown for both sides. */
@@ -426,6 +437,10 @@
           context[field.key] = readNumber('context-' + field.key);
         });
 
+        // melee / ranged: decides which offense skill (offense vs archery) applies.
+        const attackKind = document.getElementById('attackKind').value;
+        if (attackKind === 'melee' || attackKind === 'ranged') context.attackKind = attackKind;
+
         // Morale only weakens a hit that IS a morale extra attack.
         if (document.getElementById('isMoraleBonusAttack').checked) {
           context.isMoraleBonusAttack = true;
@@ -510,26 +525,34 @@
             : fmt(b.stackRoll);
 
         const rows = [
-          ['1. Бросок урона стека (damageMin..damageMax × stackCount)', stackRollText],
+          ['1. Бросок урона стека (режим из config, см. notes)', stackRollText],
           ['2. Flat-бонус (единицы урона)', (b.flatBonusApplied >= 0 ? '+' : '') + fmt(b.flatBonusApplied)],
           ['3. После flat-бонуса', fmt(b.afterFlatBonus)],
           ['4. Эффективная атака (attack + heroAttackBonus)', fmt(b.effectiveAttack)],
           ['5. Эффективная защита (defense + heroDefenseBonus)', fmt(b.effectiveDefense)],
           ['6. Множитель атака/защита', '×' + fmt(b.attackDefenseMultiplier)],
           ['7. После множителя атака/защита', fmt(b.afterAttackDefense)],
-          ['8. Процентный бонус', (b.percentBonusApplied >= 0 ? '+' : '') + fmt(b.percentBonusApplied) + '%'],
-          ['9. После процентного бонуса', fmt(b.afterPercentBonus)],
           [
-            '10. Удача (уровень ' + b.luckLevel + ', шанс ' + fmt(b.luckTriggerChancePercent) + '%)',
+            '8. Навык нападения/стрельбы',
+            (b.offenseSkillPercentApplied >= 0 ? '+' : '') + fmt(b.offenseSkillPercentApplied) + '%',
+          ],
+          ['9. После навыка нападения', fmt(b.afterOffenseSkill)],
+          ['10. Процентный бонус', (b.percentBonusApplied >= 0 ? '+' : '') + fmt(b.percentBonusApplied) + '%'],
+          ['11. После процентного бонуса', fmt(b.afterPercentBonus)],
+          [
+            '12. Удача (уровень ' + b.luckLevel + ', шанс ' + fmt(b.luckTriggerChancePercent) + '%)',
             b.luckTriggered ? 'сработала: ×' + fmt(b.luckMultiplierApplied) : 'не сработала: ×1',
           ],
-          ['11. После удачи', fmt(b.afterLuck)],
+          ['13. После удачи', fmt(b.afterLuck)],
+          ['14. Доспехи (снижение физического урона)', '−' + fmt(b.armorReductionApplied) + '%'],
+          ['15. После доспехов', fmt(b.afterArmor)],
           [
-            '12. Мораль (доп. ход)',
+            '16. Мораль (доп. ход)',
             b.moraleBonusAttackApplied ? 'применена: ×' + fmt(b.moraleMultiplier) : 'не применялась: ×1',
           ],
-          ['13. После морали', fmt(b.afterMoraleBonus)],
+          ['17. После морали', fmt(b.afterMoraleBonus)],
         ];
+
 
         const table = node('table');
         rows.forEach((row) => {
@@ -540,7 +563,7 @@
         target.append(table);
 
         target.append(node('div', fmt(result.damageDealt), 'total'));
-        target.append(node('div', 'ИТОГОВЫЙ УРОН (округление вниз, минимум = minimumDamage из конфига)', 'hint'));
+        target.append(node('div', 'ИТОГОВЫЙ УРОН (округление half up, минимум = minimumDamage из конфига)', 'hint'));
 
         // The stack model: how many units are left and how wounded the front one is.
         const maxUnitHp = lastRequest ? lastRequest.defender.stats.hp : '?';

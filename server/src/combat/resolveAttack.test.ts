@@ -24,7 +24,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules, type CombatRules } from './combatRules';
-import { resolveAttack } from './resolveAttack';
+import { clampLuckLevel, resolveAttack, roundDamage } from './resolveAttack';
 import { antimage, blackDragon, goblin, mage, swordsman } from './testFixtures';
 
 /** Smallest possible damage roll (damageMin). */
@@ -35,9 +35,13 @@ const maxRoll = (): number => 0.999;
 /** The minimum damage is balance data now: it comes from config/combat-rules.json. */
 let MIN_DAMAGE = 1;
 
+/** Same rules as the real config, but with the "sampled" roll mode forced on. */
+let sampledRules: CombatRules;
+
 beforeAll(() => {
   initCombatRules(); // loads the real config/combat-rules.json (a config smoke test too)
   MIN_DAMAGE = getCombatRules().minimumDamage;
+  sampledRules = { ...getCombatRules(), damageRollMode: 'sampled' };
 });
 
 /** Copy of a unit with changed stats, so the tests stay short and readable. */
@@ -102,11 +106,11 @@ describe('resolveAttack — pure combat resolution', () => {
   it('3. dragon attacks the antimage: attack advantage x1.35 applies', () => {
     const result = resolveAttack(blackDragon, antimage, { random: minRoll });
 
-    // attack 15 vs defense 8 -> 1 + 0.05*7 = 1.35; roll 30 -> 40.5 -> floor 40
+    // attack 15 vs defense 8 -> 1 + 0.05*7 = 1.35; roll 30 -> 40.5 -> round half up 41
     expect(result.blockedByImmunity).toBe(false);
     expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1.35);
     expect(result.breakdown.afterAttackDefense).toBeCloseTo(40.5);
-    expect(result.damageDealt).toBe(40);
+    expect(result.damageDealt).toBe(41);
     expect(result.retaliationTriggered).toBe(true);
   });
 
@@ -123,9 +127,9 @@ describe('resolveAttack — pure combat resolution', () => {
   it('4. plain exchange with no special tags: damage is dealt and retaliation is triggered', () => {
     const result = resolveAttack(swordsman, goblin, { random: minRoll });
 
-    // attack 6 vs defense 3 -> 1 + 0.05*3 = 1.15; roll 10 -> 11.5 -> floor 11
+    // attack 6 vs defense 3 -> 1 + 0.05*3 = 1.15; roll 10 -> 11.5 -> round half up 12
     expect(result.breakdown.attackDefenseMultiplier).toBeCloseTo(1.15);
-    expect(result.damageDealt).toBe(11);
+    expect(result.damageDealt).toBe(12);
     expect(result.blockedByImmunity).toBe(false);
     expect(result.retaliationTriggered).toBe(true);
   });
@@ -136,8 +140,8 @@ describe('resolveAttack — pure combat resolution', () => {
 
     expect(lowest.breakdown.stackRoll).toBe(swordsman.stats.damageMin); // 10
     expect(highest.breakdown.stackRoll).toBe(swordsman.stats.damageMax); // 14
-    expect(lowest.damageDealt).toBe(11); // 10 * 1.15 -> floor 11
-    expect(highest.damageDealt).toBe(16); // 14 * 1.15 -> floor 16
+    expect(lowest.damageDealt).toBe(12); // 10 * 1.15 = 11.5 -> round half up 12
+    expect(highest.damageDealt).toBe(16); // 14 * 1.15 = 16.1 -> 16
   });
 
   it('6. the roll scales with stackCount; an omitted stackCount means a stack of 1', () => {
@@ -229,7 +233,7 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.breakdown.luckTriggerChancePercent).toBe(40);
     expect(result.breakdown.luckTriggered).toBe(false);
     expect(result.breakdown.luckMultiplierApplied).toBe(1);
-    expect(result.damageDealt).toBe(11);
+    expect(result.damageDealt).toBe(12); // 10 * 1.15 = 11.5 -> round half up
     expect(result.notes.some((note) => note.includes('luck did not trigger'))).toBe(true);
   });
 
@@ -239,7 +243,7 @@ describe('resolveAttack — pure combat resolution', () => {
 
     expect(result.breakdown.luckTriggered).toBe(true);
     expect(result.breakdown.luckMultiplierApplied).toBe(0.75);
-    expect(result.damageDealt).toBe(8); // 11.5 * 0.75 = 8.625 -> floor 8
+    expect(result.damageDealt).toBe(9); // 11.5 * 0.75 = 8.625 -> round half up 9
     expect(result.notes.some((note) => note.includes('luck malus triggered'))).toBe(true);
   });
 
@@ -250,7 +254,7 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.breakdown.luckTriggerChancePercent).toBe(0);
     expect(result.breakdown.luckTriggered).toBe(false);
     expect(result.breakdown.luckMultiplierApplied).toBe(1);
-    expect(result.damageDealt).toBe(11);
+    expect(result.damageDealt).toBe(12);
     expect(result.notes).toContain('no luck: luckLevel is 0');
   });
 
@@ -274,7 +278,7 @@ describe('resolveAttack — pure combat resolution', () => {
     // An ordinary attack has no morale modifier at all (morale is a turn-order system).
     expect(ordinary.breakdown.moraleBonusAttackApplied).toBe(false);
     expect(ordinary.breakdown.moraleMultiplier).toBe(1);
-    expect(ordinary.damageDealt).toBe(11);
+    expect(ordinary.damageDealt).toBe(12);
 
     expect(moraleHit.breakdown.moraleBonusAttackApplied).toBe(true);
     expect(moraleHit.breakdown.moraleMultiplier).toBe(0.8);
@@ -294,11 +298,14 @@ describe('resolveAttack — pure combat resolution', () => {
 
     // Every step must be present (and be a finite number).
     expect(Object.keys(breakdown).sort()).toEqual([
+      'afterArmor',
       'afterAttackDefense',
       'afterFlatBonus',
       'afterLuck',
       'afterMoraleBonus',
+      'afterOffenseSkill',
       'afterPercentBonus',
+      'armorReductionApplied',
       'attackDefenseMultiplier',
       'effectiveAttack',
       'effectiveDefense',
@@ -310,6 +317,7 @@ describe('resolveAttack — pure combat resolution', () => {
       'luckTriggered',
       'moraleBonusAttackApplied',
       'moraleMultiplier',
+      'offenseSkillPercentApplied',
       'percentBonusApplied',
       'stackRoll',
     ]);
@@ -338,7 +346,7 @@ describe('resolveAttack — pure combat resolution', () => {
       breakdown.afterLuck * breakdown.moraleMultiplier,
     ); // 29.04 * 0.8 = 23.232
     expect(breakdown.finalDamage).toBe(
-      Math.max(MIN_DAMAGE, Math.floor(breakdown.afterMoraleBonus)),
+      Math.max(MIN_DAMAGE, roundDamage(breakdown.afterMoraleBonus)),
     ); // 23.232 -> 23
     expect(result.damageDealt).toBe(breakdown.finalDamage);
   });
@@ -372,34 +380,36 @@ describe('resolveAttack — pure combat resolution', () => {
     );
     expect(moraleHit.breakdown.moraleMultiplier).toBe(0.5);
     // With the custom +10% per point the multiplier is 1.3, not the default 1.15:
-    // roll 10 * 1.3 = 13, then * 0.5 = 6.5 -> floor 6
-    expect(moraleHit.damageDealt).toBe(6);
+    // roll 10 * 1.3 = 13, then * 0.5 = 6.5 -> round half up 7
+    expect(moraleHit.damageDealt).toBe(7);
   });
 
-  it('15. the four mastery/armor placeholders are reported but never applied', () => {
-    const attackWithPlaceholders = resolveAttack(swordsman, goblin, {
+  it('15. magicOffenseBonusPercent is still a placeholder; melee/ranged/armor now apply', () => {
+    // Magic mastery is the ONLY remaining placeholder: reported, never applied.
+    const withMagicStub = resolveAttack(swordsman, goblin, {
       random: minRoll,
-      meleeOffenseBonusPercent: 10,
-      rangedOffenseBonusPercent: 20,
       magicOffenseBonusPercent: 30,
-      defensiveArmorReductionPercent: 15,
     });
     const plainAttack = resolveAttack(swordsman, goblin, { random: minRoll });
 
-    // Nothing changes: the placeholders are documented TODOs, not implemented logic.
-    expect(attackWithPlaceholders.damageDealt).toBe(plainAttack.damageDealt);
-    expect(attackWithPlaceholders.breakdown).toEqual(plainAttack.breakdown);
+    expect(withMagicStub.damageDealt).toBe(plainAttack.damageDealt);
+    expect(withMagicStub.breakdown).toEqual(plainAttack.breakdown);
+    expect(
+      withMagicStub.notes.filter((note) => note.includes('is a placeholder')).length,
+    ).toBe(1);
+    expect(
+      withMagicStub.notes.some((note) => note.includes('magicOffenseBonusPercent=30')),
+    ).toBe(true);
 
-    // ...but they cannot be missed either.
-    expect(
-      attackWithPlaceholders.notes.filter((note) => note.includes('is a placeholder')).length,
-    ).toBe(4);
-    expect(
-      attackWithPlaceholders.notes.some((note) => note.includes('meleeOffenseBonusPercent=10')),
-    ).toBe(true);
-    expect(
-      attackWithPlaceholders.notes.some((note) => note.includes('defensiveArmorReductionPercent=15')),
-    ).toBe(true);
+    // ...whereas the offense skill and armor are real now (see their dedicated tests).
+    const withOffense = resolveAttack(swordsman, goblin, {
+      random: minRoll,
+      meleeOffenseBonusPercent: 30,
+      defensiveArmorReductionPercent: 10,
+    });
+    expect(withOffense.breakdown.offenseSkillPercentApplied).toBe(30);
+    expect(withOffense.breakdown.armorReductionApplied).toBe(10);
+    expect(withOffense.damageDealt).not.toBe(plainAttack.damageDealt);
   });
 
   it('16. declared-but-unimplemented abilities are reported instead of silently ignored', () => {
@@ -537,8 +547,8 @@ describe('resolveAttack — pure combat resolution', () => {
 
     expect(result.breakdown.luckLevel).toBe(2);
     expect(result.breakdown.luckTriggered).toBe(true);
-    // roll 30 -> 30 * 1.35 = 40.5, then * 1.5 = 60.75 -> floor 60
-    expect(result.damageDealt).toBe(60);
+    // roll 30 -> 30 * 1.35 = 40.5, then * 1.5 = 60.75 -> round half up 61
+    expect(result.damageDealt).toBe(61);
   });
 });
 
@@ -591,7 +601,7 @@ function seededRandom(seed: number): () => number {
 describe('stack damage roll — limited samples with scaling', () => {
   it('N = 1: exactly one roll, scale 1, result equals a single unit roll', () => {
     const source = sequenceRandom([0.9]);
-    const result = resolveAttack(skeletonUnit(1), swordsman, { random: source.random });
+    const result = resolveAttack(skeletonUnit(1), swordsman, { random: source.random }, sampledRules);
 
     expect(source.calls()).toBe(1);
     expect(result.breakdown.stackRoll).toBe(3);
@@ -601,7 +611,7 @@ describe('stack damage roll — limited samples with scaling', () => {
   it('N = 10 (== damageRollSamples): ten rolls, scale 1', () => {
     // damages 1,2,3,1,2,3,2,1,3,2 -> sum 20
     const source = sequenceRandom([0, 0.5, 0.9, 0, 0.5, 0.9, 0.5, 0, 0.9, 0.5]);
-    const result = resolveAttack(skeletonUnit(10), swordsman, { random: source.random });
+    const result = resolveAttack(skeletonUnit(10), swordsman, { random: source.random }, sampledRules);
 
     expect(source.calls()).toBe(10);
     expect(result.breakdown.stackRoll).toBe(20);
@@ -610,7 +620,7 @@ describe('stack damage roll — limited samples with scaling', () => {
 
   it('N = 11: still exactly ten rolls, scale 1.1, so the total can be fractional', () => {
     const source = sequenceRandom([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); // ten rolls of 1
-    const result = resolveAttack(skeletonUnit(11), swordsman, { random: source.random });
+    const result = resolveAttack(skeletonUnit(11), swordsman, { random: source.random }, sampledRules);
 
     expect(source.calls()).toBe(10);
     expect(result.breakdown.stackRoll).toBe(11); // sum 10 * (11 / 10)
@@ -620,7 +630,7 @@ describe('stack damage roll — limited samples with scaling', () => {
   it('N = 1000: exactly ten rolls, scale 100, exact total for a known sequence', () => {
     const rolls = [2, 1, 3, 3, 2, 2, 1, 3, 2, 2]; // sum 21
     const source = sequenceRandom(rolls.map((damage) => randomForDamage(damage, 1, 3)));
-    const result = resolveAttack(skeletonUnit(1000), swordsman, { random: source.random });
+    const result = resolveAttack(skeletonUnit(1000), swordsman, { random: source.random }, sampledRules);
 
     expect(source.calls()).toBe(10);
     expect(result.breakdown.stackRoll).toBe(2100); // 21 * 100
@@ -631,15 +641,15 @@ describe('stack damage roll — limited samples with scaling', () => {
     const fixedDamage = withStats(skeletonUnit(7), { damageMin: 4, damageMax: 4 });
 
     for (const value of [0, 0.5, 0.999]) {
-      const result = resolveAttack(fixedDamage, swordsman, { random: () => value });
+      const result = resolveAttack(fixedDamage, swordsman, { random: () => value }, sampledRules);
 
       expect(result.breakdown.stackRoll).toBe(4 * 7);
     }
   });
 
   it('boundaries: random() = 0 rolls damageMin, random() = 0.999 rolls damageMax', () => {
-    const lowest = resolveAttack(skeletonUnit(3), swordsman, { random: () => 0 });
-    const highest = resolveAttack(skeletonUnit(3), swordsman, { random: () => 0.999 });
+    const lowest = resolveAttack(skeletonUnit(3), swordsman, { random: () => 0 }, sampledRules);
+    const highest = resolveAttack(skeletonUnit(3), swordsman, { random: () => 0.999 }, sampledRules);
 
     expect(lowest.breakdown.stackRoll).toBe(3); // 1 per unit * 3
     expect(highest.breakdown.stackRoll).toBe(9); // 3 per unit * 3
@@ -648,7 +658,7 @@ describe('stack damage roll — limited samples with scaling', () => {
   it('worked example: 100 skeletons of 1..3 with rolls [2,1,3,3,2,2,1,3,2,2] -> 21 * 10 = 210', () => {
     const rolls = [2, 1, 3, 3, 2, 2, 1, 3, 2, 2];
     const source = sequenceRandom(rolls.map((damage) => randomForDamage(damage, 1, 3)));
-    const result = resolveAttack(skeletonUnit(100), swordsman, { random: source.random });
+    const result = resolveAttack(skeletonUnit(100), swordsman, { random: source.random }, sampledRules);
 
     expect(result.breakdown.stackRoll).toBe(210);
   });
@@ -661,7 +671,7 @@ describe('stack damage roll — limited samples with scaling', () => {
     let sumOfSquares = 0;
 
     for (let i = 0; i < attacks; i++) {
-      const roll = resolveAttack(attacker, swordsman, { random }).breakdown.stackRoll;
+      const roll = resolveAttack(attacker, swordsman, { random }, sampledRules).breakdown.stackRoll;
       sum += roll;
       sumOfSquares += roll * roll;
     }
@@ -675,3 +685,213 @@ describe('stack damage roll — limited samples with scaling', () => {
     expect(sigma).toBeLessThan(26 * 1.15);
   });
 });
+
+describe('damage roll mode (uniform is the default — decisions 015)', () => {
+  it('uniform: random() = 0 rolls the lowest value damageMin * stackCount', () => {
+    const result = resolveAttack(skeletonUnit(5), swordsman, { random: () => 0 });
+
+    expect(result.breakdown.stackRoll).toBe(5); // 1 * 5
+    expect(result.notes).toContain('damage roll mode: uniform');
+    expect(result.notes.some((note) => note.includes('uniform over 5..15'))).toBe(true);
+  });
+
+  it('uniform: random() = 0.999 rolls the highest value damageMax * stackCount (small span)', () => {
+    // swordsman 10..14, stack 1 -> span 5, floor(0.999 * 5) = 4 -> 14
+    const result = resolveAttack(swordsman, goblin, { random: () => 0.999 });
+
+    expect(result.breakdown.stackRoll).toBe(swordsman.stats.damageMax);
+  });
+
+  it('uniform: the whole range is covered (1, 2 and 3 for a single skeleton)', () => {
+    const cases: ReadonlyArray<[number, number]> = [
+      [0, 1],
+      [0.4, 2],
+      [0.9, 3],
+    ];
+
+    for (const [value, expected] of cases) {
+      const result = resolveAttack(skeletonUnit(1), swordsman, { random: () => value });
+
+      expect(result.breakdown.stackRoll).toBe(expected);
+    }
+  });
+
+  it('sampled mode is chosen by the config and reports itself in notes', () => {
+    const result = resolveAttack(skeletonUnit(1), swordsman, { random: () => 0.9 }, sampledRules);
+
+    expect(result.notes).toContain('damage roll mode: sampled');
+  });
+
+  it('damageMin == damageMax gives damageMin * stackCount in BOTH modes', () => {
+    const fixed = withStats(skeletonUnit(6), { damageMin: 7, damageMax: 7 });
+
+    expect(resolveAttack(fixed, swordsman, { random: () => 0 }).breakdown.stackRoll).toBe(42);
+    expect(
+      resolveAttack(fixed, swordsman, { random: () => 0.5 }, sampledRules).breakdown.stackRoll,
+    ).toBe(42);
+  });
+});
+
+describe('roundDamage — one "mathematical" rounding at the very end', () => {
+  it.each([
+    [0.49, 0],
+    [0.5, 1],
+    [2.4999999999999996, 3],
+    [2.4, 2],
+    [2.5, 3],
+    [23.232, 23],
+  ])('roundDamage(%s) = %s', (input, expected) => {
+    expect(roundDamage(input)).toBe(expected);
+  });
+
+  it('clampLuckLevel keeps luck/morale inside -3..3', () => {
+    expect(clampLuckLevel(5)).toBe(3);
+    expect(clampLuckLevel(-5)).toBe(-3);
+    expect(clampLuckLevel(2)).toBe(2);
+  });
+});
+
+/** Units whose attack/defense produce an exactly known attack/defense multiplier. */
+function unitsForMultiplier(multiplier: number): { attacker: CombatUnit; defender: CombatUnit } {
+  const base = withStats(swordsman, { attack: 10, damageMin: 100, damageMax: 100 });
+  const target = withStats(goblin, { defense: 10 });
+
+  if (multiplier >= 1) {
+    // +5% per attack point, capped at x4.
+    return { attacker: withStats(base, { attack: 10 + (multiplier - 1) / 0.05 }), defender: target };
+  }
+
+  // -2.5% per defense point, floored at x0.3.
+  return { attacker: base, defender: withStats(target, { defense: 10 + (1 - multiplier) / 0.025 }) };
+}
+
+describe('principle: "+X%" is a separate factor, so it changes the damage by exactly that share', () => {
+  it.each([0.3, 0.75, 1.0, 1.5, 4.0])(
+    'multiplier %s: expert offense (+30%) multiplies afterOffenseSkill by exactly 1.3',
+    (multiplier) => {
+      const { attacker, defender } = unitsForMultiplier(multiplier);
+      const plain = resolveAttack(attacker, defender, { random: () => 0 });
+      const withOffense = resolveAttack(attacker, defender, {
+        random: () => 0,
+        meleeOffenseBonusPercent: 30,
+      });
+
+      expect(plain.breakdown.attackDefenseMultiplier).toBeCloseTo(multiplier);
+      expect(plain.breakdown.afterAttackDefense).toBeCloseTo(100 * multiplier);
+      expect(withOffense.breakdown.afterOffenseSkill).toBeCloseTo(
+        plain.breakdown.afterAttackDefense * 1.3,
+      );
+    },
+  );
+
+  it('percentDamageBonus is a separate factor (x1.5 at +50%)', () => {
+    const { attacker, defender } = unitsForMultiplier(1.0);
+    const plain = resolveAttack(attacker, defender, { random: () => 0 });
+    const withPercent = resolveAttack(attacker, defender, {
+      random: () => 0,
+      percentDamageBonus: 50,
+    });
+
+    expect(withPercent.breakdown.afterPercentBonus).toBeCloseTo(
+      plain.breakdown.afterOffenseSkill * 1.5,
+    );
+  });
+
+  it('armor is a separate factor (x0.85 at 15%)', () => {
+    const { attacker, defender } = unitsForMultiplier(1.0);
+    const plain = resolveAttack(attacker, defender, { random: () => 0 });
+    const withArmor = resolveAttack(attacker, defender, {
+      random: () => 0,
+      defensiveArmorReductionPercent: 15,
+    });
+
+    expect(withArmor.breakdown.afterArmor).toBeCloseTo(plain.breakdown.afterLuck * 0.85);
+  });
+});
+
+
+describe('offense skill: melee vs ranged, physical only', () => {
+  it('melee uses meleeOffenseBonusPercent and reports the ranged one as not applied', () => {
+    const result = resolveAttack(swordsman, goblin, {
+      random: () => 0,
+      meleeOffenseBonusPercent: 30,
+      rangedOffenseBonusPercent: 50,
+    });
+
+    expect(result.breakdown.offenseSkillPercentApplied).toBe(30);
+    expect(
+      result.notes.some((note) =>
+        note.includes('rangedOffenseBonusPercent=50 not applied: melee attack'),
+      ),
+    ).toBe(true);
+  });
+
+  it('ranged uses rangedOffenseBonusPercent and reports the melee one as not applied', () => {
+    const result = resolveAttack(swordsman, goblin, {
+      random: () => 0,
+      attackKind: 'ranged',
+      meleeOffenseBonusPercent: 30,
+      rangedOffenseBonusPercent: 50,
+    });
+
+    expect(result.breakdown.offenseSkillPercentApplied).toBe(50);
+    expect(
+      result.notes.some((note) =>
+        note.includes('meleeOffenseBonusPercent=30 not applied: ranged attack'),
+      ),
+    ).toBe(true);
+  });
+
+  it('a magical attack gets NO offense skill and the note says so', () => {
+    const result = resolveAttack(mage, swordsman, {
+      random: () => 0,
+      meleeOffenseBonusPercent: 30,
+      rangedOffenseBonusPercent: 50,
+    });
+
+    expect(result.breakdown.offenseSkillPercentApplied).toBe(0);
+    expect(
+      result.notes.some((note) =>
+        note.includes('offense skill (melee/ranged) not applied: magical attack'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('armor: physical only', () => {
+  it('reduces physical damage', () => {
+    const plain = resolveAttack(swordsman, goblin, { random: () => 0 });
+    const armored = resolveAttack(swordsman, goblin, {
+      random: () => 0,
+      defensiveArmorReductionPercent: 20,
+    });
+
+    expect(armored.breakdown.armorReductionApplied).toBe(20);
+    expect(armored.damageDealt).toBeLessThan(plain.damageDealt);
+  });
+
+  it('never touches a magical attack and reports it as not applied', () => {
+    const result = resolveAttack(mage, swordsman, {
+      random: () => 0,
+      defensiveArmorReductionPercent: 20,
+    });
+
+    expect(result.breakdown.armorReductionApplied).toBe(0);
+    expect(
+      result.notes.some((note) =>
+        note.includes('defensiveArmorReductionPercent=20 not applied: magical attack'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('luck level is clamped inside resolveAttack', () => {
+  it('unit luck (3) + context luckBonus (2) is clamped to 3 and noted', () => {
+    const lucky = withLuck(swordsman, 3);
+    const result = resolveAttack(lucky, goblin, { random: () => 0, luckBonus: 2 });
+
+    expect(result.breakdown.luckLevel).toBe(3);
+    expect(result.notes.some((note) => note.includes('luck level clamped from 5 to 3'))).toBe(true);
+  });
+});
+
