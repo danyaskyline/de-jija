@@ -97,34 +97,55 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 ```
 `rules` по умолчанию — коэффициенты баланса, загруженные в память при старте сервера; `context.random` инжектится, поэтому тесты полностью детерминированы.
 
-Фиксированный порядок шагов (теги атакующего → теги защитника → расчёт по статам → модификаторы → применение):
-1. **Теги атакующего** — тип атаки: `MagicDamage` на атакующем = «магическая», иначе физическая. Это упрощённая тестовая абстракция (юнит, чья атака классифицирована как магическая), а НЕ система заклинаний: заклинания, сила заклинаний и магическое сопротивление живут в будущей `resolveSpell`, которой ещё нет.
-2. **Теги защитника** — `MagicImmune` даёт ПОЛНЫЙ блок такой атаки (тоже упрощённая абстракция «юнит неуязвим к магии»). Магический резист по процентам из `resolveAttack` УБРАН — он относится к будущей `resolveSpell`.
-3. **Бросок урона стека** — ограниченное число сэмплов со масштабированием: `k = min(stackCount, damageRollSamples)`, затем `k` независимых целых бросков `damageMin..damageMax` (включительно, как для одного юнита), `scale = stackCount / k`, `stackRoll = сумма × scale`. Округления на этом шаге НЕТ — `Math.floor` выполняется один раз в шаге 9, поэтому `stackRoll` может быть дробным и урон не теряется до множителя атаки/защита. При `stackCount ≤ damageRollSamples` выходит честный подсчёт без масштабирования (`scale = 1`).
-4. **Flat-бонус** — `flatDamageBonus` в единицах урона, применяется ДО множителя атаки/защита.
-5. **Множитель атаки/защиты** — сначала прибавляются прямые бонусы героя: `effectiveAttack = attack + heroAttackBonus`, `effectiveDefense = defense + heroDefenseBonus` (только для этого расчёта, объекты юнитов не мутируются — функция остаётся чистой), затем по коэффициентам из `config/combat-rules.json`:
-   - `attack > defense`: `min(attackAdvantageCapPercent/100, 1 + attackAdvantagePercentPerPoint/100 × (attack − defense))` — потолок +400% (множитель ≤ 4.0), как в оригинале;
-   - `attack < defense`: `max(defensePenaltyFloorPercent/100, 1 − defensePenaltyPercentPerPoint/100 × (defense − attack))` — пол +30% (множитель ≥ 0.3), как в оригинальном HoMM3; у Heroesland порог был смягчён до 80%, у нас возвращён оригинальный (см. decisions.md, 013);
-   - равны: `1`.
-6. **Процент-бонус** — `percentDamageBonus`, применяется ПОСЛЕ множителя: `× (1 + percentDamageBonus/100)`.
-7. **Удача** — НЕ плавный множитель, а ШАНС срабатывания. При `luckLevel = 0` удачи нет вовсе (множитель ×1, note «no luck»). При ненулевом уровне берётся шанс `luckChanceByLevel[|luckLevel|]` (10% / 25% / 40%), бросается один раз (`context.fixedLuckRoll` — для детерминированных тестов, иначе `context.random`), и только при срабатывании применяется `luckPositiveMultiplier` (×1.5) или `luckNegativeMultiplier` (×0.75) ко всему накопленному урону. Без срабатывания — ×1.
-8. **Мораль** — в общей формуле морали НЕТ: в оригинале мораль не ослабляет обычный удар, она либо даёт дополнительный ход, либо пропускает ход (это система очереди ходов, отдельный слой). В `resolveAttack` остался только специфичный случай: если этот удар случился БЛАГОДАРЯ дополнительному ходу морали (`isMoraleBonusAttack = true`), его урон умножается на `moraleBonusAttackMultiplier` (0.8).
-9. **Минимум урона** — итог округляется вниз и не может быть меньше `minimumDamage` (тоже из конфига).
-10. **Применение урона к пулу стека** (модель как в HoMM3: `currentHp` — ПУЛ HP всего стека, он стартует как `stats.hp × stackCount` и тратится уроном; юниты гибнут целиком, а головной держит остаток пула): `poolBefore = currentHp` (актуальный остаток, максимум заново не пересчитывается), `defenderHpAfter = max(0, poolBefore − damageDealt)`, `stackAliveCount = 0` при нулевом пуле, иначе `ceil(defenderHpAfter / stats.hp)` — округление ВВЕРХ, потому что подраненный юнит жив, а `frontUnitHp = defenderHpAfter − (stackAliveCount − 1) × stats.hp`. Отрицательный HP невозможен, а уничтоженный стек — это явное состояние `defenderDefeated = (stackAliveCount === 0)`.
-11. **Ответка** — полноценный повторный вызов `resolveAttack` (роли меняются местами, `isRetaliation = true`): ответка проходит ВСЮ формулу со всеми модификаторами, включая удачу отвечающего юнита. Общего понижающего коэффициента «ответка слабее» нет. Известный будущий случай (НЕ реализован): в оригинале стрелок, вынужденный к ближнему бою, отвечает ослабленной ближней атакой вместо своего обычного урона — это будет отдельный AbilityTag (например `WeakMeleeRetaliation`).
+Краткий порядок шагов (полное описание с формулами, ключами конфига, источниками значений и именами
+тестов — в [`combat-formula.md`](./combat-formula.md)):
+1. теги атакующего — магическая или физическая атака;
+2. теги защитника — `MagicImmune` даёт полный блок магической атаки;
+3. бросок урона стека — режим из `damageRollMode` (`uniform` по умолчанию; `sampled` — вариант из 014);
+4. flat-бонус → множитель атака/защита (капы ×4.0 и ×0.3) → навык нападения или стрельбы →
+   процентный бонус → удача (шанс) → доспехи (только против физической атаки) → мораль;
+5. одно округление half up (`roundDamage`) и минимум урона;
+6. применение урона к пулу HP стека;
+7. флаг ответки — полный повторный вызов `resolveAttack` с переставленными ролями.
 
-Конфигурация баланса — файл, НЕ БД. Все коэффициенты формулы лежат в `config/combat-rules.json` (`attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`, `defensePenaltyFloorPercent`, `luckChanceByLevel`, `luckPositiveMultiplier`, `luckNegativeMultiplier`, `moraleBonusAttackMultiplier`, `minimumDamage`, `damageRollSamples`), читаются ОДИН раз при старте сервера в память (`server/src/combat/combatRules.ts`) и передаются в `resolveAttack`; сам `resolveAttack` файл никогда не читает. Битый или неполный файл валит старт с понятным сообщением (например «отсутствует обязательное поле minimumDamage»). Файл правится руками и версионируется git — см. decisions.md, 012 и 013.
+Каждый процентный бонус — отдельный множитель, поэтому «+X%» меняет урон ровно на X%. Промежуточных
+округлений нет: округление одно в конце. Уровни удачи и морали обрезаются до −3..+3.
 
-Отложено осознанно (явные заглушки в `AttackContext`, всегда 0): `meleeOffenseBonusPercent`, `rangedOffenseBonusPercent`, `magicOffenseBonusPercent` (боевые мастерства героя) и `defensiveArmorReductionPercent` (снижение ТОЛЬКО физического урона — контакт и стрелки, никогда магия). Источник (дерево специализаций / предметы / что-то ещё) — открытый вопрос дизайна, текущий этап он не блокирует. Пока логики нет: ненулевое значение заглушки не влияет на расчёт, но попадает в `notes`, чтобы заглушку нельзя было принять за работающий бонус. Также не реализованы `AreaAttack` (нужны позиции на гекс-поле) и `Piercing`.
+Конфигурация баланса — файлы, НЕ БД. Коэффициенты формулы лежат в `config/combat-rules.json`
+(`attackAdvantagePercentPerPoint`, `attackAdvantageCapPercent`, `defensePenaltyPercentPerPoint`,
+`defensePenaltyFloorPercent`, `luckChanceByLevel`, `luckPositiveMultiplier`,
+`luckNegativeMultiplier`, `moraleBonusAttackMultiplier`, `minimumDamage`, `damageRollMode`,
+`damageRollSamples`). Навыки героя — `config/skills.json` (`id`, `name`, `levels`, `effects`).
+Оба файла читаются ОДИН раз при старте сервера в память (`server/src/combat/combatRules.ts` и
+`server/src/combat/skills.ts`) и передаются в расчёт; сама функция формулы их никогда не читает.
+Битый или неполный файл валит старт с понятным сообщением. Файлы правятся руками и версионируются
+git — см. decisions.md, 012, 013 и 015.
 
-Отладка: результат содержит `breakdown` — каждое промежуточное значение (`stackRoll` — уже масштабированное значение шага 3, а не сумма сырых бросков, `flatBonusApplied`, `afterFlatBonus`, `effectiveAttack`, `effectiveDefense`, `attackDefenseMultiplier`, `afterAttackDefense`, `percentBonusApplied`, `afterPercentBonus`, `luckLevel`, `luckTriggerChancePercent`, `luckTriggered`, `luckMultiplierApplied`, `afterLuck`, `moraleBonusAttackApplied`, `moraleMultiplier`, `afterMoraleBonus`, `finalDamage`) плюс `notes`. Ручная проверка — песочница боя (см. следующий раздел). Формула обязана быть покрыта юнит-тестами на конкретных парах юнитов (это единственный практичный способ проверить все хитрые комбинации иммунитетов и особых свойств).
+Бонусы героя собирает `server/src/combat/heroModifiers.ts` (серверная логика, не отладка):
+`aggregateHeroModifiers` превращает набор статов и навыков в один объект модификаторов, а
+`applyHeroModifiersToContext` собирает `AttackContext` по ролям — атака, навык нападения и удача от
+героя атакующего, защита и броня от героя защитника. Благодаря этому ответка (переставленные роли)
+получает бонусы отвечающего героя без отдельного механизма; отсутствие героя = все нули.
 
-## Отладочный инструмент: песочница боя (временный)
+Заглушка в `AttackContext` осталась одна: `magicOffenseBonusPercent` (магическое мастерство героя) —
+ненулевое значение попадает в `notes`, но на расчёт не влияет. Также не реализованы `AreaAttack`
+(нужны позиции на гекс-поле) и `Piercing`.
+
+Отладка: результат содержит `breakdown` — каждое промежуточное значение (`stackRoll`,
+`flatBonusApplied`, `afterFlatBonus`, `effectiveAttack`, `effectiveDefense`,
+`attackDefenseMultiplier`, `afterAttackDefense`, `offenseSkillPercentApplied`, `afterOffenseSkill`,
+`percentBonusApplied`, `afterPercentBonus`, `luckLevel`, `luckTriggerChancePercent`, `luckTriggered`,
+`luckMultiplierApplied`, `afterLuck`, `armorReductionApplied`, `afterArmor`,
+`moraleBonusAttackApplied`, `moraleMultiplier`, `afterMoraleBonus`, `finalDamage`) без округления,
+плюс `notes`. Ручная проверка — песочница боя (см. следующий раздел).
+
+## Отладочный инструмент: песочница боя (постоянный инструмент разработчика)
 - `GET /debug/combat-sandbox` — HTML-форма для ручной проверки (`server/debug/combat-sandbox.html`). Не часть игрового клиента, не связана с авторизацией персонажа, ничего не сохраняет.
 - `GET /debug/fixtures` — готовые тестовые юниты для выпадающих списков «Выбрать юнита» (те же фикстуры `server/src/combat/testFixtures.ts`, на которых построены юнит-тесты, поэтому пресеты не могут разойтись с проверенными числами). Выбор юнита заполняет форму, но любое поле потом можно поправить вручную.
-- `POST /debug/attack` — принимает параметры атакующего/защитника и context, возвращает полный результат `resolveAttack` с `breakdown`.
+- `GET /debug/heroes` — примеры героев (статы + навыки) из `server/src/combat/testFixtures.ts`. Отдельного интерфейса героев в HTML-форме пока нет — это отдельный шаг.
+- `POST /debug/attack` — принимает параметры атакующего/защитника и context, необязательные блоки `attackerHero` / `defenderHero` (тип `HeroLoadout`) и необязательный `attackKind` (`melee` | `ranged`). Если блоки героев переданы, они проходят через `heroModifiers.ts`, а ответ дополнительно содержит `aggregatedModifiers` обоих героев. Без блоков поведение прежнее.
 - HTTP выбран вместо WebSocket намеренно: инструмент — это «заполнил форму → получил разбор», а игровой протокол в `/shared` засорять не нужно; endpoint удобно дёргать и через curl.
-- Локальный инструмент разработчика: при `NODE_ENV=production` роут не монтируется, модуль помечен `// DEBUG-ONLY, remove before Phase 1` и удаляется вместе с `server/src/debug/` (docs/conventions.md).
+- Постоянный инструмент разработчика: при `NODE_ENV=production` роут НЕ монтируется; модуль помечен `// DEV-TOOL: not mounted in production` (docs/conventions.md). Удалять его перед Phase 1 не требуется.
 
 ## Оценка стоимости сервера (грубый ориентир, РФ-хостинг)
 - 50–100 игроков: одна машина (сервер+БД вместе), ~1100–2000 ₽/мес.
