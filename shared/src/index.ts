@@ -128,4 +128,192 @@ export type CombatUnit = {
    * READS these numbers. Optional: a missing object or field means 0.
    */
   bonuses?: Partial<CombatBonuses>;
+  /**
+   * How many shots (ranged attacks) the unit has left in this battle.
+   * Absent or 0 = not a shooter (it can only attack in melee).
+   */
+  shots?: number;
+  /**
+   * How many retaliations the unit may make per round. Absent = 1.
+   * 'unlimited' = no limit (e.g. Royal Griffins). Reset by the next round.
+   */
+  retaliationsPerRound?: number | 'unlimited';
+};
+
+/* -------------------------------------------------------------------------- *
+ * Battle domain types (docs/battle.md).
+ *
+ * A Battle is the layer that HOLDS the state of a fight: positions on the
+ * hex field, hit points, shots, retaliation counters. It only ORCHESTRATES the
+ * pure formulas (resolveAttack and, later, resolveSpell) — it never calculates
+ * damage itself. Transport (sandbox / WebSocket) sends commands and renders the
+ * events that come back; game rules live here and in the formulas only.
+ * -------------------------------------------------------------------------- */
+
+/** One cell of the hex field. x = column, y = row (odd-r offset layout). */
+export type Hex = { x: number; y: number };
+
+/** Which side of the field a unit fights for. */
+export type BattleSide = 'left' | 'right';
+
+/** How units may be put on the field before the first hit. */
+export type PlacementMode = 'free' | 'startZone';
+
+/** One unit as described by the setup (plain JSON, no behaviour). */
+export type UnitSetup = {
+  /** Unique within one battle. */
+  id: string;
+  /** Base stats of the unit; Battle never mutates this object. */
+  unit: CombatUnit;
+  /** How many units in the stack; a whole number >= 1. */
+  stackCount: number;
+  /** Where to put it; null = not placed yet. */
+  hex: Hex | null;
+  /** Manual bonus sources (sandbox) — added on top of the hero's bonuses. */
+  extraBonuses?: Partial<CombatBonuses>;
+};
+
+/** A hero's base stats (structural copy of the server's HeroStats). */
+export type BattleHeroStats = {
+  attack: number;
+  defense: number;
+  spellPower: number;
+  knowledge: number;
+};
+
+/** One learned skill and its level (1 = basic, 2 = advanced, 3 = expert). */
+export type BattleHeroSkillSlot = {
+  skillId: string;
+  level: 1 | 2 | 3;
+};
+
+/**
+ * A hero brings to the battle (structural copy of the server's HeroLoadout).
+ * It is declared here as plain data so BattleSetup stays serialisable; the
+ * server validates it with aggregateHeroModifiers.
+ */
+export type BattleHeroLoadout = {
+  stats: BattleHeroStats;
+  skills: BattleHeroSkillSlot[];
+};
+
+/** Everything one side brings into the battle. */
+export type SideSetup = {
+  /** null = a mob side with no hero. */
+  hero: BattleHeroLoadout | null;
+  units: UnitSetup[];
+};
+
+/** The full description of a battle: plain data, easy to save and replay. */
+export type BattleSetup = {
+  placementMode: PlacementMode;
+  sides: { left: SideSetup; right: SideSetup };
+  /** Optional per-battle override of the balance rules (combat-rules). */
+  rules?: Partial<Record<string, unknown>>;
+};
+
+/** A unit inside a running battle: base unit + its current state. */
+export type BattleUnit = {
+  id: string;
+  side: BattleSide;
+  /** Base stats, immutable; bonuses were already collected on it. */
+  unit: CombatUnit;
+  /** How many units of the stack are still alive. */
+  aliveCount: number;
+  /** The hit point pool of the WHOLE stack (HoMM3 style). */
+  poolHp: number;
+  /** Occupied cells; always exactly one in version 1, a list for later. */
+  hexes: Hex[];
+  /** Shots left; 0 = not a shooter or out of shots. */
+  shotsLeft: number;
+  /** Retaliations left this round; reset by nextRound(). */
+  retaliationsLeft: number | 'unlimited';
+};
+
+/** How a unit attacks a given target right now. */
+export type AttackKind = 'melee' | 'ranged';
+
+/** A target the unit is allowed to hit, with the way it would be hit. */
+export type ValidTarget = {
+  unitId: string;
+  kind: AttackKind;
+  distance: number;
+};
+
+/** Debug-only switches of the `attack` command. They never change game rules. */
+export type AttackOptions = {
+  /** Freezes the damage roll to this value (0..0.99), for reproducible tests. */
+  fixedDamageRoll?: number;
+  /** Freezes the luck roll (0..0.99). */
+  fixedLuckRoll?: number;
+  /** Marks the hit as a morale extra attack (damage x moraleBonusAttackMultiplier). */
+  moraleExtraAttack?: boolean;
+};
+
+/** Stable reason codes of a refused command (docs/battle.md). */
+export type BattleErrorCode =
+  | 'UNIT_NOT_FOUND'
+  | 'UNIT_DEAD'
+  | 'SAME_SIDE'
+  | 'NOT_PLACED'
+  | 'TOO_FAR'
+  | 'NO_SHOTS'
+  | 'HEX_OUT_OF_FIELD'
+  | 'HEX_OCCUPIED'
+  | 'PLACEMENT_FORBIDDEN'
+  | 'SETUP_INVALID';
+
+/**
+ * Result of any command: either it worked (and says which events it produced)
+ * or it was refused with a stable code and a human-readable reason.
+ * There are no exceptions for "you cannot do that" — the UI must show the reason.
+ */
+export type CommandResult<T> =
+  | ({ ok: true } & T)
+  | { ok: false; code: BattleErrorCode; message: string };
+
+/** Events are the only way the outside world learns what happened in a battle. */
+export type BattleEvent =
+  | { type: 'UnitPlaced'; unitId: string; hex: Hex }
+  | {
+      type: 'AttackResolved';
+      round: number;
+      attackerId: string;
+      defenderId: string;
+      kind: AttackKind;
+      damage: number;
+      defenderPoolHpBefore: number;
+      defenderPoolHpAfter: number;
+      defenderAliveBefore: number;
+      defenderAliveAfter: number;
+      breakdown: unknown;
+      notes: string[];
+    }
+  | {
+      type: 'RetaliationResolved';
+      round: number;
+      attackerId: string;
+      defenderId: string;
+      kind: AttackKind;
+      damage: number;
+      defenderPoolHpBefore: number;
+      defenderPoolHpAfter: number;
+      defenderAliveBefore: number;
+      defenderAliveAfter: number;
+      breakdown: unknown;
+      notes: string[];
+    }
+  | { type: 'ShotSpent'; unitId: string; shotsLeft: number }
+  | { type: 'UnitDestroyed'; unitId: string }
+  | { type: 'RoundStarted'; round: number };
+
+/** The whole state of a battle at one moment. */
+export type BattleState = {
+  /** Starts at 1. */
+  round: number;
+  units: BattleUnit[];
+  /** True after the first hit (matters for the startZone placement rule). */
+  attacksStarted: boolean;
+  /** Full event log, in order. */
+  log: BattleEvent[];
 };

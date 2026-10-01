@@ -21,6 +21,7 @@ import { WebSocketServer } from 'ws';
 
 import type { ClientMessage, PongMessage } from '@de-jija/shared';
 
+import { initBattleRules, DEFAULT_BATTLE_RULES_PATH } from './battle/battleRules';
 import { DEFAULT_COMBAT_RULES_PATH, initCombatRules } from './combat/combatRules';
 import { DEFAULT_SKILLS_PATH, initSkills } from './combat/skills';
 import { createDebugRouter } from './debug/debugRoutes';
@@ -50,6 +51,13 @@ try {
   const skills = initSkills();
 
   console.log(`[config] ${skills.skills.length} skills loaded from ${DEFAULT_SKILLS_PATH}`);
+
+  // The battlefield size is a SEPARATE config from the damage formula
+  // (docs/battle.md, 019), but it is validated exactly as strictly.
+  const battleRules = initBattleRules();
+
+  console.log(`[config] battle rules loaded from ${DEFAULT_BATTLE_RULES_PATH}`);
+  console.log(`[config] ${JSON.stringify(battleRules)}`);
 } catch (error) {
   console.error('[config] НЕ УДАЛОСЬ ЗАГРУЗИТЬ КОНФИГ — сервер не стартует:');
   console.error(`[config] ${error instanceof Error ? error.message : String(error)}`);

@@ -25,6 +25,10 @@ export type CombatFixture = {
   stackCount: number;
   /** Optional luck level for the sandbox presets (0 = no luck, the common case). */
   luckLevel?: number;
+  /** Optional shot count: absent or 0 = not a shooter (docs/battle.md). */
+  shots?: number;
+  /** Optional retaliation count per round (1 by default, 'unlimited' possible). */
+  retaliationsPerRound?: number | 'unlimited';
 };
 
 /** All fixtures in one place. */
@@ -62,6 +66,16 @@ export const combatFixtures: CombatFixture[] = [
     stackCount: 1,
   },
   {
+    id: 'archer',
+    name: 'Лучник',
+    category: 'Дальний бой',
+    stats: { hp: 40, attack: 5, defense: 3, speed: 6, damageMin: 5, damageMax: 8 },
+    tags: [],
+    stackCount: 1,
+    // A shooter: it has a limited number of shots and can strike at a distance.
+    shots: 12,
+  },
+  {
     id: 'black_dragon',
     name: 'Чёрный дракон',
     category: 'Магия',
@@ -94,6 +108,10 @@ export function fixtureToUnit(fixture: CombatFixture, currentHp?: number): Comba
     tags: fixture.tags,
     currentHp: currentHp ?? fixture.stats.hp * fixture.stackCount,
     stackCount: fixture.stackCount,
+    ...(fixture.shots === undefined ? {} : { shots: fixture.shots }),
+    ...(fixture.retaliationsPerRound === undefined
+      ? {}
+      : { retaliationsPerRound: fixture.retaliationsPerRound }),
   };
 }
 
@@ -105,6 +123,7 @@ export const antimage = fixtureUnit('antimage');
 export const swordsman = fixtureUnit('swordsman');
 export const goblin = fixtureUnit('goblin');
 export const mage = fixtureUnit('mage');
+export const archer = fixtureUnit('archer');
 export const blackDragon = fixtureUnit('black_dragon');
 
 /* -------------------------------------------------------------------------- *

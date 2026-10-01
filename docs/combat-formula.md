@@ -52,7 +52,7 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 | 10 | Мораль | обычный удар не ослабляется; только удар «благодаря» доп. ходу морали `× moraleBonusAttackMultiplier` | `moraleBonusAttackMultiplier` | только флаг `isMoraleBonusAttack` | сделано частично: навык `leadership` (мораль) в урон **не входит**, это система очереди ходов | `12. morale only touches a hit that IS a morale extra attack` |
 | 11 | Округление и минимум | `roundDamage(x) = Math.round(x + 1e-9)`, затем не меньше минимума | `minimumDamage` | конфиг | сделано | `roundDamage — one "mathematical" rounding at the very end`, `7. damage never falls below MIN_DAMAGE…` |
 | 12 | Применение к пулу HP | `defenderHpAfter = max(0, currentHp − damageDealt)`; `stackAliveCount = ceil(остаток / stats.hp)`; `frontUnitHp = остаток − (живых−1) × stats.hp` | — | юнит (`currentHp`, `stats.hp`, `stackCount`) | сделано | `20.`, `21.`, `22.` |
-| 13 | Ответка | полный повторный вызов `resolveAttack` с переставленными ролями и `isRetaliation = true`; бонусы берутся с бойцов, поэтому ответка автоматически получает бонусы **отвечающего** бойца | — | оба бойца | сделано | `3b.`, `17.`, `25.`, `a retaliation uses the bonuses of the combatant that answers` |
+| 13 | Ответка | полный повторный вызов `resolveAttack` с переставленными ролями и `isRetaliation = true`; бонусы берутся с бойцов, поэтому ответка автоматически получает бонусы **отвечающего** бойца. **Кто и когда отвечает, решает `Battle`**, не формула | — | оба бойца | сделано | `3b.`, `17.`, `25.`, `a defender answers with a full calculation…`, `a stack that lost units answers WEAKER…` |
 
 `breakdown` содержит каждое промежуточное значение (`stackRoll`, `afterFlatBonus`,
 `attackDefenseMultiplier`, `afterAttackDefense`, `offenseSkillPercentApplied`,
@@ -90,6 +90,10 @@ resolveAttack(attacker: CombatUnit, defender: CombatUnit, context: AttackContext
 
 **Ответка** — полный повторный расчёт с переставленными ролями и `isRetaliation: true`, от
 нового состояния. Отдельного «блока для ответки» не нужно: у отвечающего бойца свои бонусы.
+**Решение об ответке принимает `Battle`** (`server/src/battle/battle.ts`, `docs/battle.md`
+раздел 6), а не формула: только у боя есть правила «удар был ближний», «у защитника остались
+ответки в этом раунде» и «это не ответка на ответку». Формула по-прежнему ничего не знает ни о
+поле, ни о раундах, ни о счётчиках — она только считает урон по двум бойцам.
 
 ## Что видит игрок (принципы 1–5)
 
