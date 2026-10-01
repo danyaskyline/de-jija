@@ -49,9 +49,15 @@ export type CombatRules = {
   moraleBonusAttackMultiplier: number;
   /** The smallest amount of damage a hit may ever deal, e.g. 1. */
   minimumDamage: number;
+  /**
+   * How many damage rolls are drawn for a stack: k = min(stackCount, damageRollSamples).
+   * The k rolls are summed and scaled by stackCount/k, so the roll cost stays constant
+   * no matter how big the stack is (docs/decisions.md, 014).
+   */
+  damageRollSamples: number;
 };
 
-/** Fields that must exist and must be finite numbers (8 numbers + 1 object = 9 fields in total). */
+/** Fields that must exist and must be finite numbers (9 numbers + 1 object = 10 fields in total). */
 const NUMBER_FIELDS: ReadonlyArray<keyof CombatRules> = [
   'attackAdvantagePercentPerPoint',
   'attackAdvantageCapPercent',
@@ -61,6 +67,7 @@ const NUMBER_FIELDS: ReadonlyArray<keyof CombatRules> = [
   'luckNegativeMultiplier',
   'moraleBonusAttackMultiplier',
   'minimumDamage',
+  'damageRollSamples',
 ];
 
 /** Fields that must exist and must be objects of numbers (keyed by |luckLevel|). */
@@ -119,6 +126,14 @@ export function loadCombatRules(filePath: string = DEFAULT_COMBAT_RULES_PATH): C
     }
   }
 
+  // damageRollSamples needs one extra check: it must be a whole number of samples >= 1,
+  // otherwise "k = min(stackCount, samples)" could roll zero times and deal no damage.
+  if (!Number.isInteger(source.damageRollSamples) || (source.damageRollSamples as number) < 1) {
+    throw new Error(
+      `${shownPath}: поле damageRollSamples должно быть целым числом не меньше 1, а получено: ${JSON.stringify(source.damageRollSamples)}`,
+    );
+  }
+
   for (const field of OBJECT_FIELDS) {
     if (!(field in source)) {
       throw new Error(`${shownPath}: отсутствует обязательное поле ${field}`);
@@ -162,6 +177,7 @@ export function loadCombatRules(filePath: string = DEFAULT_COMBAT_RULES_PATH): C
     luckNegativeMultiplier: source.luckNegativeMultiplier as number,
     moraleBonusAttackMultiplier: source.moraleBonusAttackMultiplier as number,
     minimumDamage: source.minimumDamage as number,
+    damageRollSamples: source.damageRollSamples as number,
   };
 }
 

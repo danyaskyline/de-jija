@@ -41,6 +41,7 @@ const validRules = {
   luckNegativeMultiplier: 0.75,
   moraleBonusAttackMultiplier: 0.8,
   minimumDamage: 1,
+  damageRollSamples: 10,
 };
 
 /** Writes a file into the temp folder and returns its full path. */
@@ -103,6 +104,32 @@ describe('combat rules loader', () => {
 
     expect(() => loadCombatRules(filePath)).toThrowError(
       /поле defensePenaltyFloorPercent должно быть числом/,
+    );
+  });
+
+  it('reports a missing damageRollSamples by name', () => {
+    const filePath = writeRulesFile(
+      'missing-samples.json',
+      JSON.stringify(rulesWithout('damageRollSamples')),
+    );
+
+    expect(() => loadCombatRules(filePath)).toThrowError(
+      /отсутствует обязательное поле damageRollSamples/,
+    );
+  });
+
+  it.each([
+    ['fractional', 2.5],
+    ['zero', 0],
+    ['negative', -1],
+  ])('reports a %s damageRollSamples value with a clear message', (_label, value) => {
+    const filePath = writeRulesFile(
+      `bad-samples-${_label}.json`,
+      JSON.stringify({ ...validRules, damageRollSamples: value }),
+    );
+
+    expect(() => loadCombatRules(filePath)).toThrowError(
+      /поле damageRollSamples должно быть целым числом не меньше 1/,
     );
   });
 

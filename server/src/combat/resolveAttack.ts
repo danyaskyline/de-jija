@@ -10,7 +10,9 @@
  * Fixed order of steps (docs/architecture.md):
  *   1. attacker tags          — is the attack classified as magical?
  *   2. defender tags          — MagicImmune fully blocks a magical attack
- *   3. stack damage roll      — damageMin..damageMax per unit, times stackCount
+ *   3. stack damage roll      — k = min(stackCount, rules.damageRollSamples) independent rolls of
+ *                              damageMin..damageMax, summed and scaled by stackCount/k.
+ *                              Not rounded here: Math.floor happens once in step 9.
  *   4. flatDamageBonus        — flat damage, applied BEFORE the multiplier
  *   5. attack/defense factor  — +heroAttackBonus / -heroDefenseBonus, then config
  *   6. percentDamageBonus     — applied AFTER the multiplier
@@ -130,13 +132,46 @@ function hasTag(unit: CombatUnit, tag: AbilityTag): boolean {
   return unit.tags.includes(tag);
 }
 
-/** Damage of a stack: damageMin..damageMax per unit (inclusive), times stack size. */
-function rollStackDamage(attacker: CombatUnit, stackCount: number, random: () => number): number {
-  const minRoll = attacker.stats.damageMin * stackCount;
-  const maxRoll = attacker.stats.damageMax * stackCount;
-  const spread = maxRoll - minRoll + 1;
+type StackDamageRoll = {
+  /** The scaled total: sum of the samples times stackCount / samples. */
+  total: number;
+  /** How many independent rolls were actually drawn: k = min(stackCount, maxSamples). */
+  samples: number;
+  /** stackCount / samples — exactly 1 for stacks up to maxSamples (no scaling). */
+  scale: number;
+};
 
-  return minRoll + Math.floor(random() * spread);
+/**
+ * Damage of a stack, drawn with a LIMITED number of samples and then scaled
+ * (docs/decisions.md, 014):
+ *   k     = min(stackCount, maxSamples)
+ *   sum   = k independent rolls of damageMin..damageMax (inclusive), like for one unit
+ *   total = sum * (stackCount / k)
+ *
+ * Two properties this buys us:
+ *   - constant roll cost: 10 rolls for a 1000-unit stack instead of 1000 rolls;
+ *   - a relative spread that does not fade away on big stacks the way an honest
+ *     per-unit roll would (fewer samples = noisier result, same idea as HoMM3).
+ *
+ * NOT rounded here on purpose: Math.floor happens once in step 9, so a fractional
+ * total is fine and no damage is lost before the attack/defense multiplier.
+ */
+function rollStackDamage(
+  attacker: CombatUnit,
+  stackCount: number,
+  random: () => number,
+  maxSamples: number,
+): StackDamageRoll {
+  const { damageMin, damageMax } = attacker.stats;
+  const spread = damageMax - damageMin + 1;
+  const samples = Math.min(stackCount, Math.max(1, Math.trunc(maxSamples)));
+
+  let sum = 0;
+  for (let i = 0; i < samples; i++) {
+    sum += damageMin + Math.floor(random() * spread);
+  }
+
+  return { total: sum * (stackCount / samples), samples, scale: stackCount / samples };
 }
 
 /** Luck level of the attacker, clamped to -3..3 (0 = no luck). */
@@ -219,8 +254,12 @@ function calculateDamage(
 ): DamagePipeline {
   const notes: string[] = [];
 
-  // Step 3 — stack damage roll: damageMin..damageMax per unit, times stack size.
-  const stackRoll = rollStackDamage(attacker, stackCount, random);
+  // Step 3 — stack damage roll: k = min(stackCount, damageRollSamples) independent rolls
+  // of damageMin..damageMax, summed and scaled by stackCount/k (docs/decisions.md, 014).
+  const stackDamage = rollStackDamage(attacker, stackCount, random, rules.damageRollSamples);
+  const stackRoll = stackDamage.total;
+
+  notes.push(`damage roll: ${stackDamage.samples} sample(s), scaled x${stackDamage.scale}`);
 
   // Step 4 — flat bonus in damage units, applied BEFORE the multiplier.
   const flatBonusApplied = context.flatDamageBonus ?? 0;

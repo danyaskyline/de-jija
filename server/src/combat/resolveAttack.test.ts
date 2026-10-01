@@ -541,3 +541,137 @@ describe('resolveAttack — pure combat resolution', () => {
     expect(result.damageDealt).toBe(60);
   });
 });
+
+/** A cheap "skeleton" unit with 1..3 damage per unit — the roll tests use it. */
+function skeletonUnit(stackCount: number): CombatUnit {
+  return {
+    id: 'skeleton',
+    name: 'Скелет',
+    stats: { hp: 1, attack: 1, defense: 0, speed: 1, damageMin: 1, damageMax: 3 },
+    tags: [],
+    currentHp: stackCount,
+    stackCount,
+  };
+}
+
+/** Replays a fixed random sequence and counts how many times it was read. */
+function sequenceRandom(values: number[]): { random: () => number; calls: () => number } {
+  let index = 0;
+
+  return {
+    random: () => {
+      const value = values[index % values.length];
+      index += 1;
+
+      return value;
+    },
+    calls: () => index,
+  };
+}
+
+/** The random value that makes a unit with damageMin..damageMax roll exactly `damage`. */
+function randomForDamage(damage: number, damageMin: number, damageMax: number): number {
+  return (damage - damageMin + 0.5) / (damageMax - damageMin + 1);
+}
+
+/** Seeded PRNG (mulberry32) so the statistics test can never be flaky. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('stack damage roll — limited samples with scaling', () => {
+  it('N = 1: exactly one roll, scale 1, result equals a single unit roll', () => {
+    const source = sequenceRandom([0.9]);
+    const result = resolveAttack(skeletonUnit(1), swordsman, { random: source.random });
+
+    expect(source.calls()).toBe(1);
+    expect(result.breakdown.stackRoll).toBe(3);
+    expect(result.notes).toContain('damage roll: 1 sample(s), scaled x1');
+  });
+
+  it('N = 10 (== damageRollSamples): ten rolls, scale 1', () => {
+    // damages 1,2,3,1,2,3,2,1,3,2 -> sum 20
+    const source = sequenceRandom([0, 0.5, 0.9, 0, 0.5, 0.9, 0.5, 0, 0.9, 0.5]);
+    const result = resolveAttack(skeletonUnit(10), swordsman, { random: source.random });
+
+    expect(source.calls()).toBe(10);
+    expect(result.breakdown.stackRoll).toBe(20);
+    expect(result.notes).toContain('damage roll: 10 sample(s), scaled x1');
+  });
+
+  it('N = 11: still exactly ten rolls, scale 1.1, so the total can be fractional', () => {
+    const source = sequenceRandom([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); // ten rolls of 1
+    const result = resolveAttack(skeletonUnit(11), swordsman, { random: source.random });
+
+    expect(source.calls()).toBe(10);
+    expect(result.breakdown.stackRoll).toBe(11); // sum 10 * (11 / 10)
+    expect(result.notes).toContain('damage roll: 10 sample(s), scaled x1.1');
+  });
+
+  it('N = 1000: exactly ten rolls, scale 100, exact total for a known sequence', () => {
+    const rolls = [2, 1, 3, 3, 2, 2, 1, 3, 2, 2]; // sum 21
+    const source = sequenceRandom(rolls.map((damage) => randomForDamage(damage, 1, 3)));
+    const result = resolveAttack(skeletonUnit(1000), swordsman, { random: source.random });
+
+    expect(source.calls()).toBe(10);
+    expect(result.breakdown.stackRoll).toBe(2100); // 21 * 100
+    expect(result.notes).toContain('damage roll: 10 sample(s), scaled x100');
+  });
+
+  it('damageMin == damageMax: always damageMin * stackCount, whatever random returns', () => {
+    const fixedDamage = withStats(skeletonUnit(7), { damageMin: 4, damageMax: 4 });
+
+    for (const value of [0, 0.5, 0.999]) {
+      const result = resolveAttack(fixedDamage, swordsman, { random: () => value });
+
+      expect(result.breakdown.stackRoll).toBe(4 * 7);
+    }
+  });
+
+  it('boundaries: random() = 0 rolls damageMin, random() = 0.999 rolls damageMax', () => {
+    const lowest = resolveAttack(skeletonUnit(3), swordsman, { random: () => 0 });
+    const highest = resolveAttack(skeletonUnit(3), swordsman, { random: () => 0.999 });
+
+    expect(lowest.breakdown.stackRoll).toBe(3); // 1 per unit * 3
+    expect(highest.breakdown.stackRoll).toBe(9); // 3 per unit * 3
+  });
+
+  it('worked example: 100 skeletons of 1..3 with rolls [2,1,3,3,2,2,1,3,2,2] -> 21 * 10 = 210', () => {
+    const rolls = [2, 1, 3, 3, 2, 2, 1, 3, 2, 2];
+    const source = sequenceRandom(rolls.map((damage) => randomForDamage(damage, 1, 3)));
+    const result = resolveAttack(skeletonUnit(100), swordsman, { random: source.random });
+
+    expect(result.breakdown.stackRoll).toBe(210);
+  });
+
+  it('statistics (seeded, 20000 attacks): mean ~200 and sigma ~26 for 100 skeletons of 1..3', () => {
+    const random = seededRandom(20260930);
+    const attacker = skeletonUnit(100);
+    const attacks = 20000;
+    let sum = 0;
+    let sumOfSquares = 0;
+
+    for (let i = 0; i < attacks; i++) {
+      const roll = resolveAttack(attacker, swordsman, { random }).breakdown.stackRoll;
+      sum += roll;
+      sumOfSquares += roll * roll;
+    }
+
+    const mean = sum / attacks;
+    const sigma = Math.sqrt(sumOfSquares / attacks - mean * mean);
+
+    expect(mean).toBeGreaterThan(200 * 0.98);
+    expect(mean).toBeLessThan(200 * 1.02);
+    expect(sigma).toBeGreaterThan(26 * 0.85);
+    expect(sigma).toBeLessThan(26 * 1.15);
+  });
+});
