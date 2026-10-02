@@ -272,7 +272,7 @@ describe('rules 1 and 2 — the segments of the round and "wait"', () => {
   });
 });
 describe('rule 3 — speed, level and slot decide the order', () => {
-  it('speed first, then the level, then the slot', () => {
+  it('speed first, then the level INSIDE a side, then the sides alternate', () => {
     const battle = makeBattle(
       setupOf(
         [
@@ -287,10 +287,12 @@ describe('rule 3 — speed, level and slot decide the order', () => {
       { coin: 0.1 },
     );
 
-    // 17 first, then the higher level among the 11s, then the left slot, then
-    // the right side of the draw (priority is on the left).
+    // 17 first. Then the group of 11s: inside the left side the level decides
+    // (A2 before A1) and the sides alternate from the priority side (left), so
+    // the group is A2, B2, A1 — task 002 no longer lets the level of A2 push the
+    // right side behind both left units.
     expect(turnsOf(battle).current).toBe('b1');
-    expect(turnsOf(battle).next).toEqual(['a2', 'a1', 'b2']);
+    expect(turnsOf(battle).next).toEqual(['a2', 'b2', 'a1']);
   });
 
   it('a unit without a level equals the lowest level', () => {
@@ -348,7 +350,7 @@ describe('rules 3v/4 — the priority of the sides', () => {
     expect(logTypes(battle).filter((type) => type === 'PriorityRolled')).toHaveLength(1);
   });
 
-  it('a draw closed by the level does NOT move the priority', () => {
+  it('the level does NOT close a draw between the sides: the priority does', () => {
     const battle = makeBattle(
       setupOf(
         [{ id: 'a1', unit: fighter(11, { tier: 2 }) }],
@@ -357,9 +359,12 @@ describe('rules 3v/4 — the priority of the sides', () => {
       { coin: 0.1 },
     );
 
+    // Task 002: the level of A1 no longer closes the draw by itself. The group is
+    // cross-side, so the priority side (left, from the coin) acts first and the
+    // priority passes to the other side exactly once.
     expect(turnsOf(battle).current).toBe('a1');
-    expect(battle.getState().turns.prioritySide).toBe('left');
-    expect(logTypes(battle)).not.toContain('PriorityPassed');
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(logTypes(battle).filter((type) => type === 'PriorityPassed')).toHaveLength(1);
   });
 
   it('the slot decides INSIDE a side, and a one-side group never moves the priority', () => {

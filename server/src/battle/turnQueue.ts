@@ -8,19 +8,23 @@
  * cheap to change later.
  *
  * The rules, in the order they are applied:
- *   1. SEGMENT. Units that did NOT wait go first, by DESCENDING speed; then the
- *      units that did wait, by ASCENDING speed. The cascade for equal speeds is
- *      the SAME in both segments — only the direction of the speed sort is
- *      mirrored (rules 1/3).
- *   2. CASCADE for equal speed — one single function, compareEqualSpeed():
- *        a) the higher LEVEL acts earlier: 1 < 1+ < 2 < 2+ < 3 …;
- *        b) same level, SAME side: the leftmost slot in the army acts earlier;
- *        c) same level, DIFFERENT sides: the side with the priority acts earlier.
- *   3. GROUPS. Units with the same speed AND the same level form one group. A
- *      group that has units of both sides is a real DRAW: it is resolved by the
- *      priority side and the priority then passes to the other side (rules
- *      4b/4v). A group of three or more counts as ONE situation: inside it the
- *      sides alternate, starting from the priority side.
+ *   1. SEGMENT (001/1). Units that did NOT wait go first, by DESCENDING speed;
+ *      then the units that did wait, by ASCENDING speed. The rule for equal
+ *      speeds is the SAME in both segments — only the direction of the speed sort
+ *      is mirrored.
+ *   2. EQUAL SPEED (002/1) — the rule lives in `orderEqualSpeedGroup`, and it is
+ *      the only place where it is decided:
+ *        (а) inside one side: the LEVEL, then the SLOT — `compareWithinSide`;
+ *        (б) between the sides: the level is NOT looked at, the priority decides,
+ *            and the sides alternate starting from the priority side.
+ *   3. GROUPS (002/1). All units of the same speed inside one segment form ONE
+ *      group. A group with units of both sides is a real DRAW: it is resolved by
+ *      the priority side and the priority then passes to the other side
+ *      (001/4б). A group of three or more counts as ONE situation, so the priority
+ *      is spent exactly once for it.
+ *
+ * Task 002 corrected 001/3: the level used to be compared BEFORE the side, so a
+ * higher level on the other side could overtake the priority side.
  *
  * Everything here is deterministic: the same input always gives the same order.
  */
@@ -44,7 +48,7 @@ export type TurnQueueUnit = {
 };
 
 /**
- * One group of units that share the same speed AND the same level. A group with
+ * One group of units that share the same speed inside ONE segment. A group with
  * units of both sides is a draw that is decided by the priority side.
  */
 export type TurnGroup = {
@@ -52,11 +56,9 @@ export type TurnGroup = {
   segment: 'normal' | 'waiting';
   /** The speed all units of the group share. */
   speed: number;
-  /** The level rank all units of the group share. */
-  levelRank: number;
   /** The units of the group IN THE ORDER THEY WILL ACT. */
   unitIds: string[];
-  /** True when the group has units of both sides — a real draw (rule 3v). */
+  /** True when the group has units of both sides — a real draw (rule 1). */
   isCrossSide: boolean;
 };
 /**
@@ -76,52 +78,58 @@ function rankOf(unit: TurnQueueUnit): number {
 }
 
 /**
- * THE CASCADE FOR EQUAL SPEED — rules 3a/3b/3v, and nothing else.
+ * Compares two units INSIDE ONE SIDE at equal speed — 002/1(а).
  *
- * It is deliberately one small function: changing the equal-speed rule later
- * must be a change HERE, not a hunt through the sorting code. Returns a negative
- * number when `a` acts before `b`, a positive one when after.
+ * It knows nothing about the other side and nothing about the priority: the only
+ * order inside one side is the LEVEL first (1 < 1+ < 2 < 2+ …), then the SLOT (the
+ * leftmost slot of the army acts first).
+ *
+ * What happens BETWEEN the sides is NOT here — that lives in orderEqualSpeedGroup,
+ * which is the one place where the whole equal-speed rule of a group is decided
+ * (002/1). Keeping the two apart is deliberate: mixing them again is what made the
+ * rule of task 001 hard to change.
  */
-export function compareEqualSpeed(
-  a: TurnQueueUnit,
-  b: TurnQueueUnit,
-  prioritySide: BattleSide,
-): number {
-  // (a) The higher level acts earlier.
+export function compareWithinSide(a: TurnQueueUnit, b: TurnQueueUnit): number {
   const rankA = rankOf(a);
   const rankB = rankOf(b);
 
+  // The higher level acts earlier.
   if (rankA !== rankB) {
     return rankB - rankA;
   }
 
-  // (b) Same level and the same side: the leftmost slot in the army acts first.
-  if (a.side === b.side) {
-    return a.slot - b.slot;
-  }
-
-  // (c) Same level, different sides: the side with the priority acts first.
-  return a.side === prioritySide ? -1 : 1;
-}
-
-/** Slot order inside one side: the leftmost slot of the army acts first. */
-function bySlot(a: TurnQueueUnit, b: TurnQueueUnit): number {
+  // Same level: the leftmost slot in the army acts first.
   return a.slot - b.slot;
 }
 
 /**
- * Orders ONE group of equal-speed, equal-level units — rule 4v.
+ * THE RULE FOR EQUAL SPEED — 002/1. This is where a group of equal speed is put in
+ * order, and it is the ONLY place:
+ *   - 002/1(а) inside one side: the level, then the slot (`compareWithinSide`);
+ *   - 002/1(б) between the sides: the level is NOT looked at, the side with the
+ *     priority acts first;
+ *   - the sides then ALTERNATE, starting from the priority side, and the leftover
+ *     of one side goes as a block: A1, B1, A2, A3 for three units of A and one of B;
+ *   - the whole group stays ONE situation, so the priority is spent once (001/4б).
  *
- * Inside one side the slots decide (left slot first); the sides then ALTERNATE,
- * starting from the priority side. A group of three or more is therefore
- * A1, B1, A2, B2 … — and the whole group stays ONE situation.
+ * Exported for tests: this is a rule, and it is tested directly.
  */
-function orderGroupUnits(group: TurnQueueUnit[], prioritySide: BattleSide): string[] {
+export function orderEqualSpeedGroup(
+  group: TurnQueueUnit[],
+  prioritySide: BattleSide,
+): string[] {
   const otherSide: BattleSide = prioritySide === 'left' ? 'right' : 'left';
 
-  const ofPriority = group.filter((unit) => unit.side === prioritySide).sort(bySlot);
-  const ofOther = group.filter((unit) => unit.side === otherSide).sort(bySlot);
+  // 002/1(а): each side by level, then by slot.
+  const ofPriority = group
+    .filter((unit) => unit.side === prioritySide)
+    .sort(compareWithinSide);
+  const ofOther = group
+    .filter((unit) => unit.side === otherSide)
+    .sort(compareWithinSide);
 
+  // 002/1(б): the sides alternate from the priority side; when one side runs out,
+  // the rest of the other one follows as a block.
   const ordered: string[] = [];
   let priorityIndex = 0;
   let otherIndex = 0;
@@ -177,9 +185,9 @@ export function buildTurnOrder(units: TurnQueueUnit[], options: BuildTurnOrderOp
     ['normal', normal],
     ['waiting', waiting],
   ] as const) {
-    // Walk the segment by speed: every run of equal speed is one speed group,
-    // and inside a speed run the units of one level form a group — a group is a
-    // cell of "same speed AND same level", which is exactly what a draw is about.
+    // Walk the segment by speed: every run of equal speed is ONE group — that is
+    // what a draw between the sides is about (rule 1). Inside it the cascade
+    // decides the order.
     let index = 0;
 
     while (index < list.length) {
@@ -190,33 +198,14 @@ export function buildTurnOrder(units: TurnQueueUnit[], options: BuildTurnOrderOp
         end += 1;
       }
 
-      // Inside one speed the units are put in order by the CASCADE — the very
-      // same function both segments use — and then split into groups of one
-      // level: a group is a cell of "same speed AND same level", which is
-      // exactly what a draw (rule 3v) is about.
-      const bySpeed = list.slice(index, end).sort((a, b) => compareEqualSpeed(a, b, prioritySide));
-      let inner = 0;
+      const cell = list.slice(index, end);
 
-      while (inner < bySpeed.length) {
-        const rank = rankOf(bySpeed[inner]);
-        let innerEnd = inner;
-
-        while (innerEnd < bySpeed.length && rankOf(bySpeed[innerEnd]) === rank) {
-          innerEnd += 1;
-        }
-
-        const cell = bySpeed.slice(inner, innerEnd);
-
-        groups.push({
-          segment,
-          speed,
-          levelRank: rank,
-          unitIds: orderGroupUnits(cell, prioritySide),
-          isCrossSide: cell.some((unit) => unit.side !== cell[0].side),
-        });
-
-        inner = innerEnd;
-      }
+      groups.push({
+        segment,
+        speed,
+        unitIds: orderEqualSpeedGroup(cell, prioritySide),
+        isCrossSide: cell.some((unit) => unit.side !== cell[0].side),
+      });
 
       index = end;
     }
