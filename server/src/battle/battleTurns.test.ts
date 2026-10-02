@@ -1010,6 +1010,104 @@ describe('the queue lives in the state, so the interface only asks', () => {
       expect(turnsOf(build())).toEqual(turnsOf(first));
     }
   });
+describe('002/4в — how many times the priority shifts (counting events)', () => {
+  // The previous test proves the STATE and the JOURNAL agree. It does not prove
+  // rule 4в itself: if the code shifted the priority once per UNIT instead of
+  // once per cross-side group, that test would still be green. So the rule is
+  // proved here by COUNTING events — 4в says a group of three or more is ONE
+  // situation (docs/battle.md 15.2).
+  const passesOf = (battle: Battle): number =>
+    battle.getState().log.filter((event) => event.type === 'PriorityPassed').length;
+
+  /**
+   * Plays exactly ONE round. The round starts by itself when the queue runs out
+   * (rule 2), so "play until nobody acts" would silently run into the next round
+   * and count its shifts too — the stop condition is the round number changing.
+   */
+  const playRound = (battle: Battle): void => {
+    const round = battle.getState().round;
+
+    let guard = 0;
+    while (battle.getState().turns.currentUnitId !== null && guard < 12) {
+      battle.endTurn();
+      guard += 1;
+      if (battle.getState().round !== round) return;
+    }
+  };
+
+  it('a duel of equal speed shifts the priority exactly once per round', () => {
+    const battle = makeBattle(
+      setupOf([{ id: 'a1', unit: fighter(11) }], [{ id: 'b1', unit: fighter(11) }]),
+      { coin: 0.2, enforceTurns: true },
+    );
+
+    const openingPasses = passesOf(battle);
+
+    for (let round = 0; round < 3; round += 1) {
+      const before = passesOf(battle);
+
+      playRound(battle);
+
+      // One cross-side group (a1, b1) = one situation = one shift.
+      expect(passesOf(battle) - before).toBe(1);
+    }
+
+    expect(passesOf(battle) - openingPasses).toBe(3);
+  });
+
+  it('a group of three equal-speed units is ONE situation: one shift, not three', () => {
+    // {a1, a2, a3} against {b1, b2, b3} at the same speed and level: rule 4в
+    // says the sides alternate INSIDE the group and the priority shifts ONCE.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(11) },
+          { id: 'a2', unit: fighter(11) },
+          { id: 'a3', unit: fighter(11) },
+        ],
+        [
+          { id: 'b1', unit: fighter(11) },
+          { id: 'b2', unit: fighter(11) },
+          { id: 'b3', unit: fighter(11) },
+        ],
+      ),
+      { coin: 0.2, enforceTurns: true },
+    );
+
+    const openingPasses = passesOf(battle);
+
+    playRound(battle);
+
+    // SIX units act, but the priority shifts ONCE: a break here means rule 4в
+    // was implemented as "once per unit".
+    expect(passesOf(battle) - openingPasses).toBe(1);
+  });
+
+  it('two cross-side groups of DIFFERENT speeds shift the priority twice', () => {
+    // The counterpart: a group is one situation, but two groups are two. Without
+    // this, "one shift" could be satisfied by a code that never shifts at all.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17) },
+          { id: 'a2', unit: fighter(9) },
+        ],
+        [
+          { id: 'b1', unit: fighter(17) },
+          { id: 'b2', unit: fighter(9) },
+        ],
+      ),
+      { coin: 0.2, enforceTurns: true },
+    );
+
+    const openingPasses = passesOf(battle);
+
+    playRound(battle);
+
+    // {a1, b1} at 17 and {a2, b2} at 9: two situations, two shifts.
+    expect(passesOf(battle) - openingPasses).toBe(2);
+  });
+});
 });
 
 describe('002/4 — the priority indicator the interface reads from the state', () => {
@@ -1053,7 +1151,7 @@ describe('002/4 — the priority indicator the interface reads from the state', 
     expect(indicator(battle).reason).toBe('speed');
   });
 
-  it('the next side is always the opposite, and it is exactly where the next real pass goes', () => {
+  it('the next side is always the opposite, and the state agrees with the last real pass', () => {
     // This is the guard against the two fields drifting apart: over several
     // rounds the indicator must match the `to` of the NEXT real PriorityPassed.
     const battle = makeBattle(

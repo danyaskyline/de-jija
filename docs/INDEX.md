@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 91. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 92. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -39,11 +39,12 @@
 - [`server/debug/combat-sandbox.html`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/debug/combat-sandbox.html) — _HTML-страница_
 - [`server/package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/package.json) — _данные/конфиг (JSON)_
 - [`server/src/battle/battle.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.test.ts) — _без экспортов_
-- [`server/src/battle/battle.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.ts) — экспорты: BattleDeps, CommandOk, oppositeSide, Battle, createBattle
+- [`server/src/battle/battle.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.ts) — экспорты: BattleDeps, CommandOk, oppositeSide, priorityPair, Battle, createBattle
 - [`server/src/battle/battleRules.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleRules.test.ts) — _без экспортов_
 - [`server/src/battle/battleRules.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleRules.ts) — экспорты: DEFAULT_BATTLE_RULES_PATH, BattleRules, parseBattleRules, loadBattleRules, setBattleRules, getBattl…
 - [`server/src/battle/battleTurns.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleTurns.test.ts) — _без экспортов_
 - [`server/src/battle/hex.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/hex.test.ts) — _без экспортов_
+- [`server/src/battle/priorityIndicatorInvariant.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/priorityIndicatorInvariant.test.ts) — _без экспортов_
 - [`server/src/battle/turnQueue.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/turnQueue.test.ts) — _без экспортов_
 - [`server/src/battle/turnQueue.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/turnQueue.ts) — экспорты: TurnQueueUnit, TurnGroup, levelRank, InitialPriority, decideInitialPriority, compareWithinSide, …
 - [`server/src/combat/combatant.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/combatant.test.ts) — _без экспортов_

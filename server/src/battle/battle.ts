@@ -92,6 +92,24 @@ export const oppositeSide = (side: BattleSide): BattleSide =>
   side === 'left' ? 'right' : 'left';
 
 /**
+ * The two sides of rule 4b, created together by ONE function (002/4).
+ *
+ * `nextPrioritySide` is a stored game rule, not a thing readers may derive:
+ * "the priority passes to the OTHER side" lives only here and nowhere else, so
+ * the sandbox and the client display the field and never calculate it.
+ *
+ * Both `createBattle` (the starting state) and `setPrioritySide` (every later
+ * change) take their pair from here, so the literal side never has to be
+ * written in two places that could drift apart. An invariant test checks that
+ * the two fields stay opposite after creation and after every command — a test,
+ * not a comment, is what guards them.
+ */
+export const priorityPair = (side: BattleSide): { prioritySide: BattleSide; nextPrioritySide: BattleSide } => ({
+  prioritySide: side,
+  nextPrioritySide: oppositeSide(side),
+});
+
+/**
  * A group of equal speed whose draw was already decided in this round
  * (002/2, and the protection 4g of task 001).
  *
@@ -141,19 +159,13 @@ export class Battle {
   private groups: TurnGroup[] = [];
 
   /**
-   * The only method that changes `prioritySide`, so it writes `nextPrioritySide`
-   * next to it and the indicator follows the real priority.
+   * The only method that changes `prioritySide`. The indicator goes with it, so
+   * the two can never disagree: both come from `priorityPair` (rule 4b).
    *
-   * Rule 4b ("after a draw the priority passes to the OTHER side") lives in
-   * `oppositeSide` and nowhere else — not in the sandbox, not in the client.
-   *
-   * This is NOT a guarantee that the two fields can never disagree: `createBattle`
-   * starts the state with a literal that `rollPriority` overwrites right after.
-   * Two writers exist; an invariant test is what checks them, not this comment.
+   * This is still not a guarantee — the invariant test is. See `priorityPair`.
    */
   private setPrioritySide(side: BattleSide): void {
-    this.state.turns.prioritySide = side;
-    this.state.turns.nextPrioritySide = oppositeSide(side);
+    Object.assign(this.state.turns, priorityPair(side));
   }
 
   constructor(
@@ -1237,14 +1249,13 @@ export function createBattle(
     log,
     // The queue itself is built by the turn queue module (step 2); here the
     // battle only carries a complete starting shape.
-    // PLACEHOLDERS: openQueue() runs immediately after this and overwrites both
-    // with the real values. They are here only so the state shape is complete
-    // and no reader has to wonder what a missing field means (002, step 4).
+    // The starting pair comes from the same function as every later change, so
+    // rule 4b is written once. `rollPriority` runs immediately after and
+    // overwrites both with the real decision (rule 4a).
     turns: {
       order: [],
       currentUnitId: null,
-      prioritySide: 'left',
-      nextPrioritySide: 'right',
+      ...priorityPair('left'),
       initialPriorityReason: 'speed',
     },
   };
