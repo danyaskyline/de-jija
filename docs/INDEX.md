@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 87. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 88. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -118,3 +118,4 @@
 ## .githooks
 
 - [`.githooks/pre-commit`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-commit)
+- [`.githooks/pre-push`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-push)

@@ -15,6 +15,7 @@
     "test": "npm run test --workspaces --if-present && npm run test:checks",
     "test:checks": "node --test \"tools/checks/*.test.mjs\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "prepare": "git config core.hooksPath .githooks",
     "map": "node tools/gen-index.mjs",
     "check": "node tools/check-docs.mjs"
   }

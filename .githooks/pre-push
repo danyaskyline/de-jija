@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# pre-push hook: full local gate — types, tests and doc checks.
+# Enabled automatically by `npm install` (see the "prepare" script in package.json).
+# Runs under Git Bash on Windows. Fails the push if any step fails.
+
+echo "[pre-push] npm run typecheck ..."
+npm run typecheck --silent || { echo "[pre-push] BLOCKED: typecheck failed."; exit 1; }
+
+echo "[pre-push] npm test ..."
+npm test --silent || { echo "[pre-push] BLOCKED: tests failed."; exit 1; }
+
+echo "[pre-push] npm run check ..."
+npm run check --silent || { echo "[pre-push] BLOCKED: doc checks failed."; exit 1; }
+
+echo "[pre-push] ok"
+exit 0
