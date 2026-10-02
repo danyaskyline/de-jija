@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 92. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 97. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -13,7 +13,7 @@
 - [`AGENTS.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/AGENTS.md) — de-jija — для ИИ-агентов
 - [`package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/package.json) — _данные/конфиг (JSON)_
 - [`README.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/README.md) — de-jija
-- [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md) — START-HERE — входная точка для ИИ-агента
+- [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md) — ﻿## ЧАСТЬ B. Текущее состояние
 - [`tsconfig.base.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tsconfig.base.json) — _данные/конфиг (JSON)_
 
 ## docs
@@ -27,6 +27,7 @@
 - [`docs/tasks/001-turn-queue.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/001-turn-queue.md) — Задача 001: очередь ходов в бою
 - [`docs/tasks/002-tie-rule-and-priority-indicator.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — Задача 002: правка равной скорости, начальный приоритет и индикатор приоритета
 - [`docs/tasks/003-blocking-checks.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/003-blocking-checks.md) — Задача 003: блокирующие проверки, git-хуки и CI
+- [`docs/tasks/004-arena.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/004-arena.md) — Задача 004: арена — срез игры с логином, армией и рабочим боем
 - [`docs/workflow/done.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/done.md) — Done — закрыть шаг или задачу
 - [`docs/workflow/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/handoff.md) — Handoff — передать состояние в веб-ИИ
 - [`docs/workflow/start.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/start.md) — Start — начать или продолжить сессию
@@ -64,6 +65,8 @@
 - [`server/src/debug/debugRoutes.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/debugRoutes.test.ts) — _без экспортов_
 - [`server/src/debug/debugRoutes.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/debugRoutes.ts) — экспорты: createDebugRouter
 - [`server/src/index.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/index.ts) — _без экспортов_
+- [`server/src/units/units.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/units/units.test.ts) — _без экспортов_
+- [`server/src/units/units.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/units/units.ts) — экспорты: DEFAULT_UNITS_PATH, UnitRace, UnitData, UnitsData, loadUnits, stackCost, …
 - [`server/tsconfig.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/tsconfig.json) — _данные/конфиг (JSON)_
 
 ## client
@@ -85,9 +88,11 @@
 - [`config/battle-rules.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/battle-rules.json) — _данные/конфиг (JSON)_
 - [`config/combat-rules.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/combat-rules.json) — _данные/конфиг (JSON)_
 - [`config/skills.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/skills.json) — _данные/конфиг (JSON)_
+- [`config/units.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/units.json) — _данные/конфиг (JSON)_
 
 ## tools
 
+- [`tools/build-units-data.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/build-units-data.mjs) — _без экспортов_
 - [`tools/check-docs.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/check-docs.mjs) — _без экспортов_
 - [`tools/checks/active-task.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.mjs) — экспорты: checkActiveTask
 - [`tools/checks/active-task.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.test.mjs) — _без экспортов_

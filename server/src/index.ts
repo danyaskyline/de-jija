@@ -1,9 +1,9 @@
-/**
- * Game server — walking skeleton stage.
+﻿/**
+ * Game server вЂ” walking skeleton stage.
  *
  * What it does right now:
  *   1. HTTP server (Express) and WebSocket server (ws) share ONE port, as
- *      decided in docs/architecture.md ("один процесс, один адрес").
+ *      decided in docs/architecture.md ("РѕРґРёРЅ РїСЂРѕС†РµСЃСЃ, РѕРґРёРЅ Р°РґСЂРµСЃ").
  *   2. Every connected client is logged (connect / disconnect).
  *   3. Incoming 'ping' messages are answered with 'pong' + server time.
  *
@@ -25,6 +25,7 @@ import { initBattleRules, DEFAULT_BATTLE_RULES_PATH } from './battle/battleRules
 import { createBattleDebugRouter } from './debug/battleDebugRoutes';
 import { DEFAULT_COMBAT_RULES_PATH, initCombatRules } from './combat/combatRules';
 import { DEFAULT_SKILLS_PATH, initSkills } from './combat/skills';
+import { DEFAULT_UNITS_PATH, initUnits } from './units/units';
 import { createDebugRouter } from './debug/debugRoutes';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -59,8 +60,16 @@ try {
 
   console.log(`[config] battle rules loaded from ${DEFAULT_BATTLE_RULES_PATH}`);
   console.log(`[config] ${JSON.stringify(battleRules)}`);
+
+  // Units are DATA generated from the author's table (ADR 027). A broken file
+  // stops the server here rather than failing later, mid-battle.
+  const units = initUnits();
+
+  console.log(
+    `[config] ${units.units.length} units in ${units.races.length} factions loaded from ${DEFAULT_UNITS_PATH}`,
+  );
 } catch (error) {
-  console.error('[config] НЕ УДАЛОСЬ ЗАГРУЗИТЬ КОНФИГ — сервер не стартует:');
+  console.error('[config] РќР• РЈР”РђР›РћРЎР¬ Р—РђР“Р РЈР—РРўР¬ РљРћРќР¤РР“ вЂ” СЃРµСЂРІРµСЂ РЅРµ СЃС‚Р°СЂС‚СѓРµС‚:');
   console.error(`[config] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
@@ -71,12 +80,12 @@ if (existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST));
   console.log(`[http] serving built client from ${CLIENT_DIST}`);
 } else {
-  console.log('[http] client/dist not found — run "npm run dev:client" for the dev client');
+  console.log('[http] client/dist not found вЂ” run "npm run dev:client" for the dev client');
 }
 
 // DEV-TOOL: the two combat sandboxes and the battle API.
-//   /debug/combat-sandbox    — the FORMULA page: one strike, full breakdown (old tool);
-//   /debug/battle-sandbox    — the BATTLE page: the hex field, units, rounds, events.
+//   /debug/combat-sandbox    вЂ” the FORMULA page: one strike, full breakdown (old tool);
+//   /debug/battle-sandbox    вЂ” the BATTLE page: the hex field, units, rounds, events.
 // Both are developer tools: separate routes, no player authorization, no game state,
 // and they never touch the game protocol in /shared. Not mounted in production.
 // // DEV-TOOL: not mounted in production (docs/conventions.md)
@@ -159,3 +168,4 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     httpServer.close(() => process.exit(0));
   });
 }
+
