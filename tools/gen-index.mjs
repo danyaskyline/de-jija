@@ -1,5 +1,5 @@
 // Generates docs/INDEX.md — a map of the repository for AI agents.
-// Usage: npm run map
+// Usage: npm run map. Links are raw: they can be fetched directly without the GitHub UI.
 // Ignores: node_modules, dist, .git, package-lock.json, client/dist
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { join, relative, sep, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const BLOB = 'https://github.com/danyaskyline/de-jija/blob/main';
+const RAW = 'https://raw.githubusercontent.com/danyaskyline/de-jija/main';
 const OUT = join(ROOT, 'docs', 'INDEX.md');
 
 const IGNORED_DIRS = new Set(['node_modules', 'dist', 'build', '.git', 'coverage']);
@@ -92,7 +92,7 @@ out.push('');
 out.push('> Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.');
 out.push(`> Всего файлов: ${files.length}. Обновляй карту после добавления/удаления/переименования файлов.`);
 out.push('');
-out.push('Как читать репо экономно: сначала [`START-HERE.md`](../START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.');
+out.push('Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.');
 out.push('');
 
 for (const g of sortedGroups) {
@@ -100,7 +100,7 @@ for (const g of sortedGroups) {
   out.push('');
   for (const rel of groups.get(g)) {
     const desc = describe(join(ROOT, rel));
-    out.push(`- [\`${rel}\`](${BLOB}/${rel})${desc ? ` — ${desc}` : ''}`);
+    out.push(`- [\`${rel}\`](${RAW}/${rel})${desc ? ` — ${desc}` : ''}`);
   }
   out.push('');
 }
