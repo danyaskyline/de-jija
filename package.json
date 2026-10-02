@@ -12,7 +12,8 @@
     "dev:server": "npm run dev --workspace @de-jija/server",
     "dev:client": "npm run dev --workspace @de-jija/client",
     "build:client": "npm run build --workspace @de-jija/client",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:checks",
+    "test:checks": "node --test \"tools/checks/*.test.mjs\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "map": "node tools/gen-index.mjs",
     "check": "node tools/check-docs.mjs"
