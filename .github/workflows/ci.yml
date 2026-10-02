@@ -24,10 +24,11 @@ jobs:
 
       - run: npm ci
 
-      # The commit range this run must verify:
-      #   push        -> everything introduced by this push
-      #   pull_request -> everything the branch adds over its base
-      # A branch's first push has an all-zero "before" commit, so we fall back to HEAD.
+      # Two separate outputs, because the checks need different things:
+      #   range — the commit span to inspect (formula/doc pairing)
+      #   base  — only the base commit (append-only ADR check)
+      # A branch's first push has an all-zero "before" commit: the range then
+      # covers HEAD only, and there is no base to compare against.
       - name: Compute commit range
         id: range
         run: |
@@ -41,24 +42,23 @@ jobs:
           fi
           if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             echo "range=HEAD" >> "$GITHUB_OUTPUT"
+            echo "base=" >> "$GITHUB_OUTPUT"
           else
             echo "range=$BASE..$HEAD_SHA" >> "$GITHUB_OUTPUT"
+            echo "base=$BASE" >> "$GITHUB_OUTPUT"
           fi
-          echo "Using range: $(cat "$GITHUB_OUTPUT" | tail -1)"
+          echo "range=$(cat "$GITHUB_OUTPUT" | tail -2 | head -1)"
+          echo "base=$(cat "$GITHUB_OUTPUT" | tail -1)"
 
       - run: npm run typecheck
 
       - run: npm test
 
-      # Same checks as the local hooks, but over the whole push range, plus the
-      # append-only ADR check that needs git history.
+      # Same checks as the local hooks, but over the whole push range instead of
+      # a single commit. CHECK_BASE is empty on a first push — the ADR check then
+      # stays disabled rather than failing.
       - name: Doc checks
         env:
           CHECK_RANGE: ${{ steps.range.outputs.range }}
-          CHECK_BASE: ${{ steps.range.outputs.range == 'HEAD' && '' || steps.range.outputs.range }}
-        run: |
-          set -euo pipefail
-          if [ "$CHECK_RANGE" = "HEAD" ]; then
-            unset CHECK_BASE   # no base commit: skip the append-only ADR check
-          fi
-          npm run check
+          CHECK_BASE: ${{ steps.range.outputs.base }}
+        run: npm run check

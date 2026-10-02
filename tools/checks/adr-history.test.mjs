@@ -21,6 +21,14 @@ test('good case: no base commit given -> check does nothing locally', () => {
   assert.deepEqual(errors, []);
 });
 
+test('good case: an empty base list (CI sets CHECK_BASE to an empty string) disables the check', () => {
+  // This is what the caller passes when CHECK_BASE is empty or unset: the gate
+  // itself lives in check-docs.mjs (`(process.env.CHECK_BASE || '').trim()`),
+  // which keeps the empty string from being treated as a commit name.
+  const { errors } = checkAdrHistoryPreserved([], cur('001 — A', '002 — B'));
+  assert.deepEqual(errors, []);
+});
+
 test('bad case: an ADR was removed', () => {
   const { errors } = checkAdrHistoryPreserved([1, 2, 3], cur('001 — A', '003 — C'));
   assert.equal(errors.length, 1);

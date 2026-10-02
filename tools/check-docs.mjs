@@ -222,10 +222,11 @@ errors.push(
   errors.push(...checkAdrNumbers(read('docs/decisions.md'), taskFiles).errors);
 }
 
-// CI-only: ADRs are append-only. Runs only when a base commit is provided,
-// so a local checkout without history is not affected.
+// CI-only: ADRs are append-only. Runs only when a base commit is provided.
+// An empty CHECK_BASE (first push of a branch, where CI sets it to an empty
+// string or omits it) means "no base to compare against" — the check stays off.
 {
-  const base = process.env.CHECK_BASE;
+  const base = (process.env.CHECK_BASE || '').trim();
   if (base) {
     const before = gitRaw(['show', `${base}:docs/decisions.md`]);
     const baseNumbers = before
