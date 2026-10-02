@@ -13,20 +13,32 @@
 5. Проект ведётся соло-автором в связке с ИИ-агентами; автор не программист — код должен быть понятным и с комментариями на ключевых местах.
 
 Подробности: [README.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/README.md)
-Правила агентов: [`.clinerules/`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/01-workflow.md), процедуры — [`workflows/`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/workflows/continue.md).
+Правила проекта: [docs/conventions.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/conventions.md) · процедуры: [docs/workflow/](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/start.md) · адаптеры инструмента: [`.clinerules/`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/01-workflow.md)
 
 **Карта репозитория** (что где лежит, с полными ссылками и однострочными описаниями):
 [docs/INDEX.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/INDEX.md)
 Регенерируется командой `npm run map` — запускай её после добавления/удаления файлов.
 
-**Главные правила** (полный список — [docs/conventions.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/conventions.md))
-1. Источник правды по дизайну и архитектуре — `/docs`, не код и не память агента.
-2. Проект ведётся по задачам в `docs/tasks/`; сначала читаешь «Прогресс» активной задачи, не начинаешь заново.
-3. **Данные vs код:** юниты, предметы, способности, рецепты — это данные (JSON/таблицы БД), а не классы и не захардкоженные условия. Дублировать значения вместо ссылки по id — ошибка.
-4. **Сервер авторитетен:** клиент только визуализирует подтверждённое сервером; не рассылать полное состояние всем (нужны чанки/AOI).
-5. **Границы:** логика карты и логика боя разделены; игровые правила боя живут только в `Battle` и чистых формулах — песочница и интерфейс правил не содержат.
-6. Узкие проверяемые шаги, а не большая система сразу. Значимое архитектурное решение — сначала в `decisions.md` (ADR), потом код.
-7. Git: коммит с понятным сообщением (Conventional Commits) и push в `origin/main`; `--force` запрещён без отдельного явного разрешения.
+**Как устроен процесс**
+- Роли: **автор** — человек, ставит задачи и принимает решения; **веб-ИИ** — обсуждение, дизайн, ревью, пишет постановки задач; **CLI-агент** — реализация в репозитории.
+- Кирпичи: вход (`START-HERE.md`), состояние (его часть B), задачи (`docs/tasks/`), решения (`docs/decisions.md`), карта (`docs/INDEX.md`), процедуры (`docs/workflow/`), адаптеры (`.clinerules/`).
+- Принцип: один кирпич — один файл, одна задача; кирпичи общаются только через файлы репозитория; всё инструментозависимое живёт лишь в тонких адаптерах.
+
+**Какие файлы нужны для темы** (ссылки простым текстом — их можно скопировать в чат с веб-ИИ):
+- Бой и очередь ходов:
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/battle.md
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/turnQueue.ts
+- Формула урона:
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/combat-formula.md
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/resolveAttack.ts
+- Архитектура и сеть:
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/architecture.md
+- Игровой дизайн:
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/game-design.md
+- Решения и ADR:
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/decisions.md
+- Текущая задача:
+  https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md
 
 **Если часть B старше последнего коммита — верь `git log -5` и `git status`.**
 
@@ -54,4 +66,4 @@
 - **Тесты:** зелёные — `npm test`: 13 файлов, 356 тестов passed (battleTurns 43, battle 77, resolveAttack 69, turnQueue 38, T6-фаззинг 200 случайных боёв). `npm run typecheck` чистый.
 - **Подводные камни:** T1 на шаге 3 усилен третьим юнитом группы (иначе не доказывал ветку (а)); T3 не отличает ветку (в) от (б) — их доказывают существующие тесты и T6; T6 ловит почти любое отключение, это ожидаемо. `config/*.json` читается один раз при старте сервера — после правки нужен рестарт.
 - **Открытые вопросы:** нет.
-- **Обновлено:** 2026-10-02, модель Cline (введена механическая проверка актуальности доков: `npm run check`, pre-commit-хук, workflow `/done`).
+- **Обновлено:** 2026-10-02, роль CLI-агент (процесс переведён на нейтральные роли и кирпичи: процедуры в `docs/workflow/`, адаптеры в `.clinerules/`).

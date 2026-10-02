@@ -1,11 +1,11 @@
 # Правила работы над проектом de-jija
 
-Всё начинается с [START-HERE.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md): часть A — постоянные правила, часть B — текущее состояние. Процедуры handoff / continue / sync — в `.clinerules/workflows/`. Подробные правила проекта — [docs/conventions.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/conventions.md).
+Правила проекта — в [`docs/conventions.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/conventions.md), вход и текущее состояние — в [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), процедуры — в [`docs/workflow/`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/start.md). Здесь только адаптация правил к этому инструменту.
 
 ## Рабочий цикл
 1. После каждого шага с зелёными тестами: обновить «Прогресс» в файле задачи (3 строки: сделано / тесты / следующий шаг), сделать маленький обычный коммит (не `wip`), запушить в `origin/main` без `--force`.
 2. Отчёт автору после шага — максимум 10 строк: что сделано, тесты, следующий шаг.
-3. Если контекст сессии заполнен больше ~50% — предложить `/smol` или `/newtask`.
+3. Если контекст сессии заполнен больше ~50% — предложить автору перенести состояние в новую сессию (процедура Handoff).
 
 ## Экономия
 Не читать файл целиком, если нужна часть (диапазон строк или поиск). Не перечитывать прочитанное в этой сессии. Не открывать `package-lock.json`. Перед чтением более 5 файлов написать, зачем они нужны.

@@ -1,13 +1,23 @@
 // Mechanical doc-freshness check. Usage: npm run check.
 // Prints WARNINGS only and always exits 0 — it must never block a commit.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const warnings = [];
+
+// Concrete model/tool names that must not leak into the process documentation.
+// Kept as one list so it is cheap to keep in sync.
+const TOOL_NAMES = [
+  'Claude', 'DeepSeek', 'Cline', 'cline', 'ChatGPT', 'GPT-', 'Gemini', 'Copilot',
+  'Cursor', 'Windsurf', 'Aider', 'Space Bunny', 'Codex', 'Llama', 'Mistral', 'Grok',
+];
+
+// Process files that must stay tool-neutral.
+const NEUTRAL_FILES = ['START-HERE.md', 'AGENTS.md', 'docs/conventions.md', 'docs/workflow'];
 
 const warn = (msg) => warnings.push(msg);
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -99,6 +109,33 @@ for (const src of ['server/src', 'client/src', 'shared/src']) {
 }
 if (longFiles.length > 0) {
   warn(`файлов .ts длиннее ${TS_MAX_LINES} строк: ${longFiles.length} — ${longFiles.join(', ')}`);
+}
+
+// --- 7. Tool neutrality of the process docs --------------------------------
+const collectNeutralFiles = () => {
+  const found = [];
+  for (const rel of NEUTRAL_FILES) {
+    const abs = join(ROOT, rel);
+    if (!existsSync(abs)) continue;
+    if (statSync(abs).isDirectory()) {
+      for (const name of readdirSync(abs)) {
+        if (name.endsWith('.md')) found.push(`${rel}/${name}`);
+      }
+    } else {
+      found.push(rel);
+    }
+  }
+  return found;
+};
+for (const rel of collectNeutralFiles()) {
+  // Strip repo paths and URLs first: `.clinerules` and similar are legitimate
+  // file names, not tool names in the prose.
+  const text = read(rel)
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[\w./-]*\.clinerules[\w./-]*/g, '')
+    .replace(/\.clineignore/g, '');
+  const hits = TOOL_NAMES.filter((name) => text.includes(name));
+  if (hits.length > 0) warn(`${rel}: названия конкретных инструментов — ${hits.join(', ')}`);
 }
 
 // --- Output ------------------------------------------------------------------

@@ -1,1 +1,1 @@
-Процедуры handoff / continue / sync — в `.clinerules/workflows/`. Постоянные правила — в `01-workflow.md`.
+Процедуры — в `docs/workflow/` (start, handoff, sync, done). Адаптеры этого инструмента — в `.clinerules/`.
