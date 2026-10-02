@@ -11,6 +11,7 @@ import type { BattleSide } from '@de-jija/shared';
 import {
   buildTurnOrder,
   compareWithinSide,
+  decideInitialPriority,
   levelRank,
   orderEqualSpeedGroup,
   type TurnQueueUnit,
@@ -400,13 +401,6 @@ describe('compareWithinSide — the order inside ONE side', () => {
     expect(compareWithinSide(a1, a2)).toBeLessThan(0);
     expect(compareWithinSide(a2, a1)).toBeGreaterThan(0);
   });
-
-  it('says nothing about the other side — that is orderEqualSpeedGroup', () => {
-    // The function does not even take a priority, so there is no cross-side case
-    // to assert here: between the sides the rule is checked in the two describes
-    // above, through orderEqualSpeedGroup and buildTurnOrder.
-    expect(compareWithinSide.length).toBe(2);
-  });
 });
 
 describe('orderEqualSpeedGroup — the equal-speed rule (002/1)', () => {
@@ -439,5 +433,127 @@ describe('orderEqualSpeedGroup — the equal-speed rule (002/1)', () => {
     ];
 
     expect(orderEqualSpeedGroup(group, 'right')).toEqual(['a2', 'a1']);
+  });
+});
+describe('decideInitialPriority — the opening priority (002/0)', () => {
+  /** A coin that records whether it was thrown, and which side it returned. */
+  function countedCoin(result: 'left' | 'right') {
+    let calls = 0;
+
+    return {
+      flip: () => {
+        calls += 1;
+        return result;
+      },
+      calls: () => calls,
+    };
+  }
+
+  it('different top speeds: the priority goes to the side that acts second, no coin', () => {
+    const coin = countedCoin('left');
+
+    // Example 1: A's fastest is 21, B's is 17.
+    const first = decideInitialPriority(
+      [queueUnit('a1', 'left', 0, 21), queueUnit('b1', 'right', 0, 17)],
+      coin.flip,
+    );
+
+    expect(first).toEqual({ prioritySide: 'right', reason: 'speed' });
+    expect(coin.calls()).toBe(0);
+
+    // The other way round: now B is faster, so the priority is on the left.
+    const mirrored = decideInitialPriority(
+      [queueUnit('a1', 'left', 0, 17), queueUnit('b1', 'right', 0, 21)],
+      countedCoin('right').flip,
+    );
+
+    expect(mirrored).toEqual({ prioritySide: 'left', reason: 'speed' });
+  });
+
+  it('two fast units on one side are still one maximum (example 3)', () => {
+    const coin = countedCoin('left');
+
+    const result = decideInitialPriority(
+      [
+        queueUnit('a1', 'left', 0, 17),
+        queueUnit('a2', 'left', 1, 17),
+        queueUnit('b1', 'right', 0, 12),
+      ],
+      coin.flip,
+    );
+
+    expect(result).toEqual({ prioritySide: 'right', reason: 'speed' });
+    expect(coin.calls()).toBe(0);
+  });
+
+  it('equal top speeds: the coin is thrown exactly once and decides (example 2)', () => {
+    const left = countedCoin('left');
+    const right = countedCoin('right');
+    const units = [queueUnit('a1', 'left', 0, 17), queueUnit('b1', 'right', 0, 17)];
+
+    expect(decideInitialPriority(units, left.flip)).toEqual({
+      prioritySide: 'left',
+      reason: 'coin',
+    });
+    expect(left.calls()).toBe(1);
+
+    expect(decideInitialPriority(units, right.flip)).toEqual({
+      prioritySide: 'right',
+      reason: 'coin',
+    });
+    expect(right.calls()).toBe(1);
+  });
+
+  it('the level does not affect the opening priority', () => {
+    const coin = countedCoin('left');
+
+    // The top speeds are EQUAL here, so the only thing that can decide is the coin.
+    // The left unit has a much higher level — if the function ever started to look
+    // at levels, this test would fail instead of passing by accident.
+    const result = decideInitialPriority(
+      [
+        queueUnit('a1', 'left', 0, 17, { tier: 9 }),
+        queueUnit('b1', 'right', 0, 17, { tier: 1 }),
+      ],
+      coin.flip,
+    );
+
+    expect(result).toEqual({ prioritySide: 'left', reason: 'coin' });
+    expect(coin.calls()).toBe(1);
+  });
+
+  it('a side without units counts as speed 0', () => {
+    const coin = countedCoin('left');
+
+    // One side empty, the other has units: the empty side acts second, so it has
+    // the priority — and no coin is needed.
+    const oneEmpty = decideInitialPriority([queueUnit('b1', 'right', 0, 7)], coin.flip);
+
+    expect(oneEmpty).toEqual({ prioritySide: 'left', reason: 'speed' });
+    expect(coin.calls()).toBe(0);
+
+    // Both sides empty: both maxima are 0, so it is a coin.
+    const bothEmpty = decideInitialPriority([], countedCoin('right').flip);
+
+    expect(bothEmpty).toEqual({ prioritySide: 'right', reason: 'coin' });
+  });
+
+  it('the same armies and the same coin always give the same answer', () => {
+    const units = [
+      queueUnit('a1', 'left', 0, 17),
+      queueUnit('a2', 'left', 1, 11),
+      queueUnit('b1', 'right', 0, 17),
+    ];
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(decideInitialPriority(units, () => 'left')).toEqual({
+        prioritySide: 'left',
+        reason: 'coin',
+      });
+      expect(decideInitialPriority(units, () => 'right')).toEqual({
+        prioritySide: 'right',
+        reason: 'coin',
+      });
+    }
   });
 });

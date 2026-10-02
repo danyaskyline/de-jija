@@ -77,17 +77,72 @@ function rankOf(unit: TurnQueueUnit): number {
   return levelRank(unit.tier, unit.upgraded);
 }
 
+/** Why the side got the priority when the battle was created (002/0). */
+export type InitialPriorityReason = 'speed' | 'coin';
+
+/** The result of the opening priority decision of task 002, rule 0. */
+export type InitialPriority = {
+  /** The side that wins an equal-speed draw from now on. */
+  prioritySide: BattleSide;
+  /** Whether the speed decided it or the coin flip did. */
+  reason: InitialPriorityReason;
+};
+
 /**
- * Compares two units INSIDE ONE SIDE at equal speed — 002/1(а).
+ * THE OPENING PRIORITY — 002/0. Which side has the priority at the start of the
+ * battle, decided ONCE, by createBattle.
  *
- * It knows nothing about the other side and nothing about the priority: the only
- * order inside one side is the LEVEL first (1 < 1+ < 2 < 2+ …), then the SLOT (the
+ * The rule: the side whose fastest ALIVE unit is faster acts first in round 1, so
+ * the priority goes to the OTHER side — the coin is not thrown at all. Only when
+ * both sides have the same top speed is it a real draw, and then the coin decides.
+ *
+ * It is a PURE function: it never reads a random source itself. `flipCoin` is
+ * called ONLY when the coin is really needed — that is why the number of random
+ * values a battle consumes now depends on the armies (002/8: a debt for the seed
+ * task).
+ */
+export function decideInitialPriority(
+  units: TurnQueueUnit[],
+  flipCoin: () => BattleSide,
+): InitialPriority {
+  // The fastest alive unit of each side. A side without units simply has 0, which
+  // is below any real speed.
+  let topLeft = 0;
+  let topRight = 0;
+
+  for (const unit of units) {
+    if (unit.side === 'left') {
+      topLeft = Math.max(topLeft, unit.currentSpeed);
+    } else {
+      topRight = Math.max(topRight, unit.currentSpeed);
+    }
+  }
+
+  // Different top speeds: no coin is needed, and the side that acts SECOND wins
+  // the draws.
+  if (topLeft > topRight) {
+    return { prioritySide: 'right', reason: 'speed' };
+  }
+  if (topRight > topLeft) {
+    return { prioritySide: 'left', reason: 'speed' };
+  }
+
+  // Equal: a real draw at the very top, so the coin decides — and the draw itself
+  // is then resolved by the normal queue rule (001/4б passes the priority on).
+  return { prioritySide: flipCoin(), reason: 'coin' };
+}
+
+/**
+ * Compares two units INSIDE ONE side at equal speed — 002/1(а).
+ *
+ * It knows nothing about the other side and nothing about the priority: inside one
+ * side the only order is the LEVEL first (1 < 1+ < 2 < 2+ …), then the SLOT (the
  * leftmost slot of the army acts first).
  *
  * What happens BETWEEN the sides is NOT here — that lives in orderEqualSpeedGroup,
- * which is the one place where the whole equal-speed rule of a group is decided
- * (002/1). Keeping the two apart is deliberate: mixing them again is what made the
- * rule of task 001 hard to change.
+ * the one place where the whole equal-speed rule is decided (002/1). Keeping the
+ * two apart is deliberate: mixing them is what made the rule of task 001 hard to
+ * change, and it also left the cross-side branch of a comparator unused in battle.
  */
 export function compareWithinSide(a: TurnQueueUnit, b: TurnQueueUnit): number {
   const rankA = rankOf(a);

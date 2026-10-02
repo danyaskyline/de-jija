@@ -510,10 +510,11 @@ describe('placeUnit', () => {
 
     expect(result.ok).toBe(true);
     expect(stateOf(battle, 'l1').hexes).toEqual([{ x: 3, y: 4 }]);
-    // The log opens the battle (coin, the draw of the two equal-speed units, the
-    // first turn) and then records this placement.
+    // The log opens the battle (the opening priority, the draw of the two equal-speed
+    // units, the first turn) and then records this placement. The two units have
+    // the SAME speed, so the priority came from the coin.
     expect(battle.getState().log).toEqual([
-      { type: 'PriorityRolled', side: 'left' },
+      { type: 'PriorityRolled', side: 'left', reason: 'coin' },
       { type: 'PriorityPassed', round: 1, from: 'left', to: 'right', unitIds: ['l1', 'r1'] },
       { type: 'TurnStarted', round: 1, unitId: 'l1' },
       { type: 'UnitPlaced', unitId: 'l1', hex: { x: 3, y: 4 } },

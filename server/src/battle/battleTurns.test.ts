@@ -79,13 +79,28 @@ function makeBattle(
   setup: BattleSetup,
   options: { coin?: number; enforceTurns?: boolean } = {},
 ): Battle {
+  // How many times the battle actually read a random value. Since 002/0 the
+  // opening priority is thrown by SPEED and the coin is read only when the top
+  // speeds are equal — so passing `coin` where it is never read is a mistake in
+  // the test, not a harmless leftover.
+  let randomCalls = 0;
+
   const created = createBattle(setup, {
     combatRules: getCombatRules(),
     skillsData: skills,
     battleRules: BATTLE_RULES,
-    random: () => options.coin ?? 0,
+    random: () => {
+      randomCalls += 1;
+      return options.coin ?? 0;
+    },
     enforceTurns: options.enforceTurns === true,
   });
+
+  if (options.coin !== undefined && randomCalls === 0) {
+    throw new Error(
+      'coin passed but never read: this setup is decided by speed, so drop the coin',
+    );
+  }
 
   if (!created.ok) {
     throw new Error(`createBattle failed unexpectedly: ${created.code} ${created.message}`);
@@ -105,53 +120,186 @@ function turnsOf(battle: Battle) {
 function logTypes(battle: Battle): string[] {
   return battle.getState().log.map((event) => event.type);
 }
-describe('rule 4a — the coin flip of the new battle', () => {
-  it('is thrown at creation even when no equal-speed draw can happen', () => {
-    // Completely different speeds: no draw is possible anywhere in this battle,
-    // and the coin is still in the log (rule 7).
-    const battle = makeBattle(
-      setupOf(
-        [{ id: 'l1', unit: fighter(18) }],
-        [{ id: 'r1', unit: fighter(5) }],
-      ),
+describe('002/0 — the opening priority of the new battle', () => {
+  it('is decided by speed when the top speeds differ, and the coin is not thrown', () => {
+    let calls = 0;
+    const created = createBattle(
+      setupOf([{ id: 'l1', unit: fighter(18) }], [{ id: 'r1', unit: fighter(5) }]),
+      {
+        combatRules: getCombatRules(),
+        skillsData: skills,
+        battleRules: BATTLE_RULES,
+        random: () => {
+          calls += 1;
+          return 0;
+        },
+      },
     );
 
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const battle = created.battle;
+
+    // L1 (18) is faster, so L1 acts first — and therefore the priority goes to the
+    // side that acts SECOND, which is the right one.
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(turnsOf(battle).current).toBe('l1');
+    // The coin was NOT thrown: no random value was read at all.
+    expect(calls).toBe(0);
+    expect(battle.getState().log[0]).toEqual({
+      type: 'PriorityRolled',
+      side: 'right',
+      reason: 'speed',
+    });
+    // With no draw in round 1 there is nothing to spend the priority on.
     expect(logTypes(battle)).toEqual(['PriorityRolled', 'TurnStarted']);
-    expect(battle.getState().turns.prioritySide).toBe('left');
   });
 
-  it('the injected random decides which side starts with the priority', () => {
-    const withCoin = (coin: number) =>
-      makeBattle(
+  it('two fast units on one side are still one maximum (example 3)', () => {
+    let calls = 0;
+    const created = createBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17) },
+          { id: 'a2', unit: fighter(17) },
+        ],
+        [{ id: 'b1', unit: fighter(12) }],
+      ),
+      {
+        combatRules: getCombatRules(),
+        skillsData: skills,
+        battleRules: BATTLE_RULES,
+        random: () => {
+          calls += 1;
+          return 0;
+        },
+      },
+    );
+
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const battle = created.battle;
+
+    // The left side clearly wins the speed, so the priority is on the right and no
+    // coin is thrown.
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['a2', 'b1']);
+    expect(calls).toBe(0);
+  });
+
+  it('the injected random decides it only when the top speeds are equal', () => {
+    const withCoin = (coin: number) => {
+      let calls = 0;
+      const created = createBattle(
         setupOf([{ id: 'l1', unit: fighter(9) }], [{ id: 'r1', unit: fighter(9) }]),
-        { coin },
+        {
+          combatRules: getCombatRules(),
+          skillsData: skills,
+          battleRules: BATTLE_RULES,
+          random: () => {
+            calls += 1;
+            return coin;
+          },
+        },
       );
 
-    // The coin is written to the log as it was thrown (rule 7).
-    expect(withCoin(0.1).getState().log[0]).toEqual({ type: 'PriorityRolled', side: 'left' });
-    expect(withCoin(0.9).getState().log[0]).toEqual({ type: 'PriorityRolled', side: 'right' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) {
+        return undefined;
+      }
 
-    // And it really shows in the order of the very first draw: with the priority
-    // on the left, L1 goes first; with the priority on the right, R1 does.
-    expect(turnsOf(withCoin(0.1)).current).toBe('l1');
-    expect(turnsOf(withCoin(0.9)).current).toBe('r1');
+      return { battle: created.battle, calls };
+    };
+
+    // Equal speeds: the coin is thrown exactly once and is written to the log.
+    const leftThrow = withCoin(0.1);
+    const rightThrow = withCoin(0.9);
+
+    expect(leftThrow?.battle.getState().log[0]).toEqual({
+      type: 'PriorityRolled',
+      side: 'left',
+      reason: 'coin',
+    });
+    expect(rightThrow?.battle.getState().log[0]).toEqual({
+      type: 'PriorityRolled',
+      side: 'right',
+      reason: 'coin',
+    });
+    expect(leftThrow?.calls).toBe(1);
+    expect(rightThrow?.calls).toBe(1);
+
+    // The coin decides the DRAW on top: the priority side acts first, and the
+    // priority immediately passes to the other side (001/4б).
+    const left = leftThrow?.battle;
+    const right = rightThrow?.battle;
+
+    if (left === undefined || right === undefined) {
+      throw new Error('createBattle unexpectedly refused a valid setup');
+    }
+
+    expect(turnsOf(left).current).toBe('l1');
+    expect(left.getState().turns.prioritySide).toBe('right');
+    expect(logTypes(left).filter((type) => type === 'PriorityPassed')).toHaveLength(1);
+
+    expect(turnsOf(right).current).toBe('r1');
+    expect(right.getState().turns.prioritySide).toBe('left');
+    expect(logTypes(right).filter((type) => type === 'PriorityPassed')).toHaveLength(1);
   });
 
-  it('consumes exactly ONE value of random at creation (open question 3)', () => {
-    let calls = 0;
-    const setup = setupOf([{ id: 'l1', unit: fighter(7) }], [{ id: 'r1', unit: fighter(8) }]);
+  it('consumes exactly one value of random at creation, and only when needed', () => {
+    /** Creates a battle and reports how many times random was read. */
+    const build = (left: number, right: number) => {
+      let calls = 0;
 
-    createBattle(setup, {
-      combatRules: getCombatRules(),
-      skillsData: skills,
-      battleRules: BATTLE_RULES,
-      random: () => {
-        calls += 1;
-        return 0;
-      },
-    });
+      createBattle(
+        setupOf([{ id: 'l1', unit: fighter(left) }], [{ id: 'r1', unit: fighter(right) }]),
+        {
+          combatRules: getCombatRules(),
+          skillsData: skills,
+          battleRules: BATTLE_RULES,
+          random: () => {
+            calls += 1;
+            return 0;
+          },
+        },
+      );
 
-    expect(calls).toBe(1);
+      return calls;
+    };
+
+    // Different top speeds: no coin at all.
+    expect(build(7, 8)).toBe(0);
+    // Equal top speeds: exactly one coin, never more.
+    expect(build(7, 7)).toBe(1);
+    expect(build(20, 20)).toBe(1);
+  });
+
+  it('the opening priority is deterministic for the same setup', () => {
+    const build = () =>
+      makeBattle(
+        setupOf(
+          [
+            { id: 'a1', unit: fighter(17) },
+            { id: 'a2', unit: fighter(11) },
+          ],
+          [{ id: 'b1', unit: fighter(17) }],
+        ),
+        { enforceTurns: true },
+      );
+
+    const first = build();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect(turnsOf(build())).toEqual(turnsOf(first));
+      expect(build().getState().turns.prioritySide).toBe(first.getState().turns.prioritySide);
+    }
   });
 });
 
@@ -284,7 +432,7 @@ describe('rule 3 — speed, level and slot decide the order', () => {
           { id: 'b2', unit: fighter(11) },
         ],
       ),
-      { coin: 0.1 },
+      {},
     );
 
     // 17 first. Then the group of 11s: inside the left side the level decides
@@ -301,7 +449,7 @@ describe('rule 3 — speed, level and slot decide the order', () => {
         [{ id: 'a1', unit: fighter(11) }],
         [{ id: 'b1', unit: fighter(11, { tier: 1 }) }],
       ),
-      { coin: 0.1 },
+      {},
     );
 
     expect(turnsOf(battle).current).toBe('a1');
@@ -312,7 +460,7 @@ describe('rules 3v/4 — the priority of the sides', () => {
   it('a draw is decided by the priority side, and the priority passes on', () => {
     const battle = makeBattle(
       setupOf([{ id: 'a1', unit: fighter(11) }], [{ id: 'b1', unit: fighter(11) }]),
-      { coin: 0.1 },
+      {},
     );
 
     expect(turnsOf(battle).current).toBe('a1');
@@ -332,7 +480,7 @@ describe('rules 3v/4 — the priority of the sides', () => {
   it('the priority alternates over several rounds, and the alternation survives', () => {
     const battle = makeBattle(
       setupOf([{ id: 'a1', unit: fighter(11) }], [{ id: 'b1', unit: fighter(11) }]),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
 
     const winnerOfRound: string[] = [];
@@ -344,7 +492,7 @@ describe('rules 3v/4 — the priority of the sides', () => {
     }
 
     // Round 1 the priority is on the left, in round 2 on the right, and so on —
-    // the coin is thrown only ONCE, at creation.
+    // the opening decision is logged only ONCE, at creation.
     expect(winnerOfRound).toEqual(['a1', 'b1', 'a1', 'b1']);
     expect(battle.getState().round).toBe(5);
     expect(logTypes(battle).filter((type) => type === 'PriorityRolled')).toHaveLength(1);
@@ -356,12 +504,13 @@ describe('rules 3v/4 — the priority of the sides', () => {
         [{ id: 'a1', unit: fighter(11, { tier: 2 }) }],
         [{ id: 'b1', unit: fighter(11, { tier: 1 }) }],
       ),
-      { coin: 0.1 },
+      {},
     );
 
-    // Task 002: the level of A1 no longer closes the draw by itself. The group is
-    // cross-side, so the priority side (left, from the coin) acts first and the
-    // priority passes to the other side exactly once.
+    // Task 002: the level of A1 no longer closes the draw by itself. Both top
+    // speeds are 11, so the opening coin puts the priority on the left; the group
+    // is cross-side, so the priority side acts first and the priority passes to
+    // the other side exactly once.
     expect(turnsOf(battle).current).toBe('a1');
     expect(battle.getState().turns.prioritySide).toBe('right');
     expect(logTypes(battle).filter((type) => type === 'PriorityPassed')).toHaveLength(1);
@@ -377,7 +526,7 @@ describe('rules 3v/4 — the priority of the sides', () => {
         ],
         [{ id: 'b1', unit: fighter(5) }],
       ),
-      { coin: 0.9 },
+      {},
     );
 
     // The three left units of 11 are one group of ONE side: the slots order them,
@@ -400,7 +549,7 @@ describe('rules 3v/4 — the priority of the sides', () => {
           { id: 'b2', unit: fighter(11) },
         ],
       ),
-      { coin: 0.1 },
+      {},
     );
 
     // Four equal units: A1, B1, A2, B2 — the sides alternate from the priority.
@@ -412,6 +561,10 @@ describe('rules 3v/4 — the priority of the sides', () => {
 });
 describe('rules 5 and 6 — speed changes and deaths inside a round', () => {
   it('the worked example: a haste turns 11 into 17 and makes a draw', () => {
+    // Category Б: the setup used to rely on the coin (coin: 0.1 gave the left
+    // side the priority). Now the SPEEDS do it: AFast 18 beats B1 17, so AFast
+    // acts first and the priority goes to the side that acts second — the right.
+    // The coin is never thrown here, so `coin` is not passed at all.
     const battle = makeBattle(
       setupOf(
         [
@@ -420,23 +573,26 @@ describe('rules 5 and 6 — speed changes and deaths inside a round', () => {
         ],
         [{ id: 'b1', unit: fighter(17) }],
       ),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
 
+    // AFast is the fastest unit of the battle and acts first; the priority is on
+    // the right (the side that acts second).
     expect(turnsOf(battle).current).toBe('aFast');
+    expect(battle.getState().turns.prioritySide).toBe('right');
     battle.endTurn();
 
     // Still slow: it goes after the right unit of 17.
     expect(turnsOf(battle).current).toBe('b1');
 
     // The haste: 11 -> 17 makes a draw with B1. The unit whose turn it is now
-    // (B1) keeps that turn (rule 5), the draw is decided, and the priority passes
-    // to the other side — from the left to the right.
+    // (B1) keeps that turn (rule 5 from task 001), the draw is decided, and the
+    // priority passes to the other side — from the right to the left.
     battle.setUnitSpeed('aSlow', 17);
 
     expect(turnsOf(battle).current).toBe('b1');
     expect(turnsOf(battle).next).toEqual(['aSlow']);
-    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(battle.getState().turns.prioritySide).toBe('left');
     expect(logTypes(battle).filter((type) => type === 'PriorityPassed')).toHaveLength(1);
 
     // Two units are still to act, so the round is not over yet.
@@ -446,18 +602,18 @@ describe('rules 5 and 6 — speed changes and deaths inside a round', () => {
     battle.endTurn();
 
     // Round 2: AFast is the fastest again and acts alone. The draw of 17 vs 17 is the
-    // NEXT group: it is resolved lazily, so the priority is still on the right and
-    // the order shows B1 first — the opposite of round 1, where A1 went first.
+    // NEXT group: it is resolved lazily, so the priority is still on the left and
+    // ASlow (left) goes before B1 this time — the opposite of round 1.
     expect(battle.getState().round).toBe(2);
     expect(turnsOf(battle).current).toBe('aFast');
-    expect(turnsOf(battle).next).toEqual(['b1', 'aSlow']);
-    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(turnsOf(battle).next).toEqual(['aSlow', 'b1']);
+    expect(battle.getState().turns.prioritySide).toBe('left');
 
     // Once that group really starts, the priority passes to the other side.
     battle.endTurn();
 
-    expect(turnsOf(battle).current).toBe('b1');
-    expect(battle.getState().turns.prioritySide).toBe('left');
+    expect(turnsOf(battle).current).toBe('aSlow');
+    expect(battle.getState().turns.prioritySide).toBe('right');
   });
 
   it('the unit whose turn it is keeps that turn when its own speed changes', () => {
@@ -514,7 +670,7 @@ describe('rules 5 and 6 — speed changes and deaths inside a round', () => {
         ],
         [{ id: 'b1', unit: fighter(7) }],
       ),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
 
     // A1 acts and is done for this round.
@@ -548,7 +704,7 @@ describe('rules 5 and 6 — speed changes and deaths inside a round', () => {
         ],
         [{ id: 'b1', unit: fighter(5), hex: { x: 4, y: 4 } }],
       ),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
 
     expect(turnsOf(battle).current).toBe('a1');
@@ -584,7 +740,7 @@ describe('rules 5 and 6 — speed changes and deaths inside a round', () => {
         ],
         [{ id: 'b1', unit: fighter(5), hex: { x: 4, y: 4 } }],
       ),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
 
     const hit = battle.attack('a1', 'b1', { fixedDamageRoll: 0, fixedLuckRoll: 0 });
@@ -610,7 +766,7 @@ describe('rule 4g — a recalculation inside a round keeps the decided order', (
           { id: 'b2', unit: fighter(11) },
         ],
       ),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
   }
 
@@ -649,7 +805,7 @@ describe('rule 4g — a recalculation inside a round keeps the decided order', (
           { id: 'b3', unit: fighter(4) },
         ],
       ),
-      { coin: 0.1, enforceTurns: true },
+      { enforceTurns: true },
     );
 
     // The group of four was resolved: A1, B1, A2, B2 — and the priority moved.
@@ -750,7 +906,13 @@ describe('the round moves on by itself', () => {
   });
 });
 describe('enforceTurns — the switch that keeps the sandbox working', () => {
-  /** A field where L1 (the current unit), L2 and R1 stand next to each other. */
+  /**
+   * A field where L1 (the current unit), L2 and R1 stand next to each other.
+   *
+   * The top speeds are 11 and 5, so the opening priority comes from the SPEED
+   * (the right side acts second and therefore has the priority) — no coin is
+   * involved, and makeBattle would fail loudly if one were passed.
+   */
   function field(options: { enforceTurns?: boolean }) {
     return makeBattle(
       setupOf(
@@ -760,7 +922,7 @@ describe('enforceTurns — the switch that keeps the sandbox working', () => {
         ],
         [{ id: 'r1', unit: fighter(5), hex: { x: 4, y: 4 } }],
       ),
-      { coin: 0.1, enforceTurns: options.enforceTurns },
+      { enforceTurns: options.enforceTurns },
     );
   }
 
@@ -815,7 +977,7 @@ describe('the queue lives in the state, so the interface only asks', () => {
         ],
         [{ id: 'b1', unit: fighter(5) }],
       ),
-      { coin: 0.9 },
+      {},
     );
 
     expect(battle.getState().turns).toEqual({
@@ -835,7 +997,7 @@ describe('the queue lives in the state, so the interface only asks', () => {
           ],
           [{ id: 'b1', unit: fighter(11) }],
         ),
-        { coin: 0.1, enforceTurns: true },
+        { enforceTurns: true },
       );
 
     const first = build();

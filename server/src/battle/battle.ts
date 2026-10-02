@@ -44,7 +44,7 @@ import { aggregateHeroModifiers } from '../combat/heroModifiers';
 import { resolveAttack } from '../combat/resolveAttack';
 import type { SkillsData } from '../combat/skills';
 import type { BattleRules } from './battleRules';
-import { buildTurnOrder, type TurnGroup, type TurnQueueUnit } from './turnQueue';
+import { buildTurnOrder, decideInitialPriority, type TurnGroup, type TurnQueueUnit } from './turnQueue';
 
 /** Everything Battle needs from the outside; injected so tests are deterministic. */
 export type BattleDeps = {
@@ -711,15 +711,50 @@ export class Battle {
   }
 
   /**
-   * The coin flip of rule 4a: it is ALWAYS thrown when the battle is created,
-   * even if no equal-speed draw ever happens.
+   * THE OPENING PRIORITY — 002/0. Decided once, when the battle is created.
+   *
+   * The fastest alive unit of each side decides who acts first in round 1, and the
+   * priority goes to the side that acts SECOND. Only when the top speeds are equal
+   * the coin is thrown — through the injected random, never `Math.random` directly,
+   * so a test stays deterministic.
+   *
+   * The rule itself lives in the pure `decideInitialPriority`, so it can be checked
+   * without a battle at all; this method only supplies the coin and writes the result
+   * into the state and the log.
    */
   private rollPriority(): BattleEvent {
-    const side: BattleSide = this.random() < 0.5 ? 'left' : 'right';
+    const actors: TurnQueueUnit[] = [];
 
-    this.state.turns.prioritySide = side;
+    // Only ALIVE units take part in the opening decision: a destroyed stack cannot
+    // be the fastest one. At creation every unit is alive, but the filter keeps the
+    // rule honest for any later call.
+    for (const unit of this.state.units) {
+      if (unit.aliveCount <= 0) {
+        continue;
+      }
 
-    return { type: 'PriorityRolled', side };
+      actors.push({
+        id: unit.id,
+        side: unit.side,
+        slot: unit.slot,
+        currentSpeed: unit.currentSpeed,
+        tier: unit.unit.tier,
+        upgraded: unit.unit.upgraded,
+        hasWaitedThisRound: unit.hasWaitedThisRound,
+      });
+    }
+
+    const decision = decideInitialPriority(actors, () =>
+      this.random() < 0.5 ? 'left' : 'right',
+    );
+
+    this.state.turns.prioritySide = decision.prioritySide;
+
+    return {
+      type: 'PriorityRolled',
+      side: decision.prioritySide,
+      reason: decision.reason,
+    };
   }
 
   /**

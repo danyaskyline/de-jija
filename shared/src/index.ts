@@ -350,10 +350,11 @@ export type BattleEvent =
   | { type: 'UnitDestroyed'; unitId: string }
   | { type: 'RoundStarted'; round: number }
   /**
-   * The coin flip thrown when the battle was created — which side starts with
-   * the priority. Logged so a whole fight can be replayed (rule 4a/7).
+   * Начальный приоритет, пишется один раз при создании боя. `reason: 'speed'` —
+   * решила скорость, монетка не бросалась; `reason: 'coin'` — максимальные
+   * скорости сторон равны, монетку бросали (docs/tasks/002, правило 0).
    */
-  | { type: 'PriorityRolled'; side: BattleSide }
+  | { type: 'PriorityRolled'; side: BattleSide; reason: 'speed' | 'coin' }
   /**
    * The equal-speed group was ordered by rule 3v (the priority side acts first),
    * and the priority has passed to the OTHER side (rules 4b/4v). One event per
