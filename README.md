@@ -30,8 +30,12 @@
 /server   — игровой сервер (Node.js + TypeScript, Express + ws)
 /client   — клиент (TypeScript, PixiJS, сборка через Vite)
 /shared   — общие типы протокола между сервером и клиентом
+/config   — данные игровых правил (JSON)
+/tools    — служебные скрипты проекта
 /docs     — документация проекта (источник правды по дизайну и архитектуре)
 ```
+
+Полная карта со ссылками на каждый файл — [`docs/INDEX.md`](./docs/INDEX.md), обновляется командой `npm run map`.
 
 ## Как запустить (нужно два терминала)
 
@@ -73,9 +77,11 @@ Vite напечатает адрес: `http://localhost:5173/`
 ## Полезные команды
 
 ```
-npm test               — юнит-тесты (vitest): сейчас это боевая логика resolveAttack
+npm test               — юнит-тесты (vitest)
 npm run typecheck      — проверка типов во всех пакетах (server, client, shared)
 npm run build:client   — собрать клиент в client/dist
+npm run map            — обновить карту репозитория docs/INDEX.md
+npm run check          — проверить актуальность документации
 ```
 После `npm run build:client` сервер сам отдаёт собранный клиент — можно открыть `http://127.0.0.1:3000/` и запускать только один процесс (Vite в этом случае не нужен).
 
