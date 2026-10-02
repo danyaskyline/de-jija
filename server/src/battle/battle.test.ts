@@ -1271,5 +1271,101 @@ describe('getValidTargets', () => {
   });
 });
 
+describe('unit level data (tier / upgraded)', () => {
+  /** Creates a battle and returns the refusal, failing loudly if it succeeded. */
+  function refuseOf(setup: BattleSetup) {
+    const created = createBattle(setup, {
+      combatRules: getCombatRules(),
+      skillsData: skills,
+      battleRules: BATTLE_RULES,
+      random: minRoll,
+    });
+
+    if (created.ok) {
+      throw new Error('createBattle unexpectedly succeeded');
+    }
+
+    return created;
+  }
+
+  it('accepts a valid tier and keeps it on the combatant', () => {
+    const battle = makeBattle(
+      setupWith(
+        [{ id: 'l1', unit: unit(swordsman, { tier: 3, upgraded: true }) }],
+        [{ id: 'r1', unit: unit(goblin) }],
+      ),
+    );
+
+    expect(stateOf(battle, 'l1').unit.tier).toBe(3);
+    expect(stateOf(battle, 'l1').unit.upgraded).toBe(true);
+  });
+
+  it('accepts a unit without a level at all (it is simply the lowest)', () => {
+    const battle = makeBattle(
+      setupWith([{ id: 'l1', unit: unit(swordsman) }], [{ id: 'r1', unit: unit(goblin) }]),
+    );
+
+    expect(stateOf(battle, 'l1').unit.tier).toBeUndefined();
+    expect(stateOf(battle, 'l1').unit.upgraded).toBeUndefined();
+  });
+
+  it('rejects a tier that is not a whole number >= 1', () => {
+    for (const tier of [0, -2, 1.5, '2']) {
+      const refusal = refuseOf(
+        setupWith(
+          [{ id: 'l1', unit: unit(swordsman, { tier: tier as number }) }],
+          [{ id: 'r1', unit: unit(goblin) }],
+        ),
+      );
+
+      expect(refusal.code).toBe('SETUP_INVALID');
+      expect(refusal.message).toMatch(/tier юнита "l1"/);
+    }
+  });
+
+  it('rejects an upgraded flag that is not a boolean', () => {
+    const refusal = refuseOf(
+      setupWith(
+        [{ id: 'l1', unit: unit(swordsman, { upgraded: 'yes' as unknown as boolean }) }],
+        [{ id: 'r1', unit: unit(goblin) }],
+      ),
+    );
+
+    expect(refusal.code).toBe('SETUP_INVALID');
+    expect(refusal.message).toMatch(/upgraded юнита "l1"/);
+  });
+
+  it('gives every unit its own slot in the army and a separate current speed', () => {
+    const battle = makeBattle(
+      setupWith(
+        [
+          { id: 'l1', unit: unit(swordsman) },
+          { id: 'l2', unit: unit(goblin) },
+        ],
+        [{ id: 'r1', unit: unit(archer) }],
+      ),
+    );
+
+    // The slot is the order in the setup, fixed once (rule 3b).
+    expect(stateOf(battle, 'l1').slot).toBe(0);
+    expect(stateOf(battle, 'l2').slot).toBe(1);
+    expect(stateOf(battle, 'r1').slot).toBe(2);
+
+    // The current speed starts as the base speed, but it is its own copy.
+    expect(stateOf(battle, 'r1').currentSpeed).toBe(6);
+    expect(stateOf(battle, 'r1').unit.stats.speed).toBe(6);
+    expect(stateOf(battle, 'l1').currentSpeed).toBe(5);
+  });
+
+  it('starts with nobody having waited and nobody having acted', () => {
+    const battle = makeBattle(
+      setupWith([{ id: 'l1', unit: unit(swordsman) }], [{ id: 'r1', unit: unit(goblin) }]),
+    );
+
+    expect(stateOf(battle, 'l1').hasWaitedThisBattle).toBe(false);
+    expect(stateOf(battle, 'l1').hasWaitedThisRound).toBe(false);
+    expect(stateOf(battle, 'l1').hasActedThisRound).toBe(false);
+  });
+});
 
 

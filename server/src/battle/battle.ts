@@ -496,6 +496,23 @@ function validateSetup(
         );
       }
 
+      // The LEVEL is optional data, but if it is given it must be a whole
+      // number >= 1 — otherwise the level scale would be nonsense (rule 3a).
+      const { tier, upgraded } = unitSetup.unit;
+
+      if (tier !== undefined && (!Number.isInteger(tier) || tier < 1)) {
+        return refuse(
+          'SETUP_INVALID',
+          `${where}: tier юнита "${unitSetup.id}" должен быть целым числом не меньше 1, а получено: ${JSON.stringify(tier)}`,
+        );
+      }
+      if (upgraded !== undefined && typeof upgraded !== 'boolean') {
+        return refuse(
+          'SETUP_INVALID',
+          `${where}: upgraded юнита "${unitSetup.id}" должен быть true или false, а получено: ${JSON.stringify(upgraded)}`,
+        );
+      }
+
       if (unitSetup.hex !== null && unitSetup.hex !== undefined) {
         const hex = unitSetup.hex;
 
@@ -574,6 +591,15 @@ export function createBattle(
         hexes: unitSetup.hex === null ? [] : [{ x: unitSetup.hex.x, y: unitSetup.hex.y }],
         shotsLeft: combatant.shots ?? 0,
         retaliationsLeft: combatant.retaliationsPerRound ?? 1,
+        // The slot in the army IS the order of the unit in the setup, fixed once
+        // here and never changed afterwards (docs/battle.md, "Очередь ходов").
+        slot: units.length,
+        // The speed is a separate COPY: a haste-like effect changes currentSpeed
+        // and leaves the base stat of the unit untouched.
+        currentSpeed: combatant.stats.speed,
+        hasWaitedThisBattle: false,
+        hasWaitedThisRound: false,
+        hasActedThisRound: false,
       });
     }
   }
@@ -584,7 +610,15 @@ export function createBattle(
     .filter((unit) => unit.hexes.length > 0)
     .map((unit) => ({ type: 'UnitPlaced', unitId: unit.id, hex: { ...unit.hexes[0] } }));
 
-  const state: BattleState = { round: 1, units, attacksStarted: false, log };
+  const state: BattleState = {
+    round: 1,
+    units,
+    attacksStarted: false,
+    log,
+    // The queue itself is built by the turn queue module (step 2); here the
+    // battle only carries a complete starting shape.
+    turns: { order: [], currentUnitId: null, prioritySide: 'left' },
+  };
   const battle = new Battle(state, units, { ...deps, combatRules }, setup.placementMode);
 
   return { ok: true, battle };

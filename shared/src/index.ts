@@ -138,6 +138,19 @@ export type CombatUnit = {
    * 'unlimited' = no limit (e.g. Royal Griffins). Reset by the next round.
    */
   retaliationsPerRound?: number | 'unlimited';
+  /**
+   * LEVEL of the unit as a plain number (1, 2, 3, …): the higher the level, the
+   * earlier the unit acts among units of the SAME speed (docs/battle.md,
+   * "Очередь ходов", rule 3a). Optional — a unit without a tier is treated as
+   * the lowest level, it never fails.
+   */
+  tier?: number;
+  /**
+   * UPGRADED marker of the unit: the "+" in the level scale (1 < 1+ < 2 < 2+).
+   * Optional — absent or false means a plain unit. Compared together with
+   * `tier` as a number, so the order is the HoMM3 one without string sorting.
+   */
+  upgraded?: boolean;
 };
 
 /* -------------------------------------------------------------------------- *
@@ -228,6 +241,34 @@ export type BattleUnit = {
   shotsLeft: number;
   /** Retaliations left this round; reset by nextRound(). */
   retaliationsLeft: number | 'unlimited';
+  /**
+   * Slot in the army, fixed ONCE when the battle is created (the order of the
+   * unit in BattleSetup.sides[side].units). Among units of the same side, the
+   * LEFT slot acts earlier (docs/battle.md, "Очередь ходов", rule 3b).
+   */
+  slot: number;
+  /**
+   * The speed the unit acts with RIGHT NOW. It starts as unit.stats.speed and
+   * changes when a haste-like effect changes it — so the base stat stays
+   * immutable and a speed change can be recalculated from this value alone.
+   */
+  currentSpeed: number;
+  /**
+   * True once the unit has pressed "wait" in THIS battle. A unit may wait at
+   * most once per battle (rule 2).
+   */
+  hasWaitedThisBattle: boolean;
+  /**
+   * True once the unit has pressed "wait" in the CURRENT round — that is what
+   * puts it into the waiting segment (rule 1). Reset when a new round starts.
+   */
+  hasWaitedThisRound: boolean;
+  /**
+   * True once the unit has finished its turn in the CURRENT round. A unit that
+   * already acted does not come back into the queue of that round, not even
+   * after a speed change (rule 5). Reset when a new round starts.
+   */
+  hasActedThisRound: boolean;
 };
 
 /** How a unit attacks a given target right now. */
@@ -261,7 +302,9 @@ export type BattleErrorCode =
   | 'HEX_OUT_OF_FIELD'
   | 'HEX_OCCUPIED'
   | 'PLACEMENT_FORBIDDEN'
-  | 'SETUP_INVALID';
+  | 'SETUP_INVALID'
+  | 'NOT_YOUR_TURN'
+  | 'ALREADY_WAITED';
 
 /**
  * Result of any command: either it worked (and says which events it produced)
@@ -305,7 +348,54 @@ export type BattleEvent =
     }
   | { type: 'ShotSpent'; unitId: string; shotsLeft: number }
   | { type: 'UnitDestroyed'; unitId: string }
-  | { type: 'RoundStarted'; round: number };
+  | { type: 'RoundStarted'; round: number }
+  /**
+   * The coin flip thrown when the battle was created — which side starts with
+   * the priority. Logged so a whole fight can be replayed (rule 4a/7).
+   */
+  | { type: 'PriorityRolled'; side: BattleSide }
+  /**
+   * The equal-speed group was ordered by rule 3v (the priority side acts first),
+   * and the priority has passed to the OTHER side (rules 4b/4v). One event per
+   * situation, so a group of three shifts the priority exactly once.
+   */
+  | {
+      type: 'PriorityPassed';
+      round: number;
+      /** Who had the priority before. */
+      from: BattleSide;
+      /** Who has it now. */
+      to: BattleSide;
+      /** Units of the resolved group, in the order they will act. */
+      unitIds: string[];
+    }
+  /** The unit pressed "wait": it moves to the waiting segment of this round. */
+  | { type: 'UnitWaited'; unitId: string; round: number }
+  /** The unit whose turn it is now. */
+  | { type: 'TurnStarted'; round: number; unitId: string };
+
+/**
+ * The turn queue of the current round (docs/battle.md, "Очередь ходов").
+ *
+ * It lives INSIDE the battle state, so the interface can show who acts next
+ * without calculating anything itself.
+ */
+export type TurnQueueState = {
+  /**
+   * Unit ids in the order they will act, NOT counting the unit whose turn it is
+   * now (it is named in `currentUnitId`). Dead units and units that already
+   * acted in this round are never in here.
+   */
+  order: string[];
+  /** Whose turn it is now; null while the queue is empty. */
+  currentUnitId: string | null;
+  /**
+   * The side that wins an equal-speed draw (rule 3v). Thrown by a coin flip when
+   * the battle is created and passed to the other side after every draw that
+   * really needed it (rules 4a/4b).
+   */
+  prioritySide: BattleSide;
+};
 
 /** The whole state of a battle at one moment. */
 export type BattleState = {
@@ -316,4 +406,6 @@ export type BattleState = {
   attacksStarted: boolean;
   /** Full event log, in order. */
   log: BattleEvent[];
+  /** Who acts when, and which side has the priority. */
+  turns: TurnQueueState;
 };
