@@ -419,6 +419,152 @@ describe('the in-memory limit', () => {
     expect((await get(`/battles/${ids[0]}/state`)).status).toBe(404);
     expect((await get(`/battles/${ids[ids.length - 1]}/state`)).status).toBe(200);
   });
+describe('the turn commands: /end-turn, /wait, /speed (002, step 5)', () => {
+  it('end-turn moves the queue on and returns the new state', async () => {
+    const battleId = await newBattle();
+    const before = (await get(`/battles/${battleId}/state`)).body.state;
+
+    const { status, body } = await post(`/battles/${battleId}/end-turn`);
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.state?.turns.currentUnitId).not.toBe(before?.turns.currentUnitId);
+    expect(body.state?.turns.order).not.toEqual(before?.turns.order);
+  });
+
+  it('end-turn needs no body at all — the current unit is whoever it is', async () => {
+    const battleId = await newBattle();
+
+    const { status, body } = await post(`/battles/${battleId}/end-turn`, { nonsense: true });
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+  });
+
+  it('wait moves the current unit into the waiting segment of the round', async () => {
+    const battleId = await newBattle();
+    const before = (await get(`/battles/${battleId}/state`)).body.state;
+    const current = before?.turns.currentUnitId;
+
+    // Equal speeds: the coin decided who is current, so the test must NOT
+    // hardcode a side — it asks the state which unit it is.
+    expect(typeof current).toBe('string');
+
+    const { status, body } = await post(`/battles/${battleId}/wait`, { unitId: current });
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.state?.units.find((unit) => unit.id === current)?.hasWaitedThisRound).toBe(true);
+    expect(body.events?.map((event) => event.type)).toContain('UnitWaited');
+  });
+
+  it('a wait without a unitId is a broken request: 400', async () => {
+    const battleId = await newBattle();
+
+    const { status, body } = await post(`/battles/${battleId}/wait`, {});
+
+    expect(status).toBe(400);
+    expect(body.code).toBe('BAD_REQUEST');
+  });
+
+  it('a wait by an unknown unit is REFUSED, and that is a normal 200', async () => {
+    const battleId = await newBattle();
+
+    const { status, body } = await post(`/battles/${battleId}/wait`, { unitId: 'nobody' });
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('UNIT_NOT_FOUND');
+  });
+
+  it('a second wait in the same battle is REFUSED — once per battle, by any route', async () => {
+    const battleId = await newBattle();
+    const current = (await get(`/battles/${battleId}/state`)).body.state?.turns.currentUnitId;
+
+    expect((await post(`/battles/${battleId}/wait`, { unitId: current })).body.ok).toBe(true);
+    const { status, body } = await post(`/battles/${battleId}/wait`, { unitId: current });
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(false);
+    expect(body.code).toBe('ALREADY_WAITED');
+  });
+
+  it('a non-current unit may wait too when the turn check is off (the default)', async () => {
+    // enforceTurns is OFF by default so the sandbox keeps working: waiting is
+    // NOT a stolen turn, it only moves the unit into the waiting segment, and
+    // the queue keeps its head.
+    const battleId = await newBattle();
+    const before = (await get(`/battles/${battleId}/state`)).body.state;
+    const current = before?.turns.currentUnitId;
+    const other = before?.units.find((unit) => unit.id !== current)?.id;
+
+    const { status, body } = await post(`/battles/${battleId}/wait`, { unitId: other });
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.state?.turns.currentUnitId).toBe(current);
+  });
+
+  it('speed changes the current speed of ANY unit, not only the current one', async () => {
+    const battleId = await newBattle();
+    const before = (await get(`/battles/${battleId}/state`)).body.state;
+    const current = before?.turns.currentUnitId;
+    const other = before?.units.find((unit) => unit.id !== current)?.id;
+
+    // The other unit is NOT current: changing a non-current unit is exactly
+    // what rule 5 must survive, and the sandbox needs it for a hero's haste.
+    const { status, body } = await post(`/battles/${battleId}/speed`, { unitId: other, speed: 17 });
+
+    expect(status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.state?.units.find((unit) => unit.id === other)?.currentSpeed).toBe(17);
+  });
+
+  it('the current unit keeps its turn when ITS speed changes (rule 5)', async () => {
+    const battleId = await newBattle();
+    const before = (await get(`/battles/${battleId}/state`)).body.state;
+    const current = before?.turns.currentUnitId;
+
+    const body = (await post(`/battles/${battleId}/speed`, { unitId: current, speed: 1 })).body;
+
+    // The current unit does not lose the turn to a unit that is now faster:
+    // the queue is not rebuilt behind its back.
+    expect(body.ok).toBe(true);
+    expect(body.state?.turns.currentUnitId).toBe(current);
+    expect(body.state?.turns.order).toEqual(before?.turns.order);
+  });
+
+  it('a speed change of a unit behind the current one keeps the turn and rebuilds the queue', async () => {
+    const battleId = await newBattle();
+    const before = (await get(`/battles/${battleId}/state`)).body.state;
+    const current = before?.turns.currentUnitId;
+    const other = before?.units.find((unit) => unit.id !== current)?.id;
+
+    // Slow the unit behind down: it must drop behind everybody else.
+    const body = (await post(`/battles/${battleId}/speed`, { unitId: other, speed: 1 })).body;
+
+    expect(body.state?.turns.currentUnitId).toBe(current);
+    expect(body.state?.turns.order.at(-1)).toBe(other);
+  });
+
+  it('a speed that is not a number is a broken request: 400', async () => {
+    const battleId = await newBattle();
+
+    const { status, body } = await post(`/battles/${battleId}/speed`, { unitId: 'a', speed: 'fast' });
+
+    expect(status).toBe(400);
+    expect(body.code).toBe('BAD_REQUEST');
+  });
+
+  it('all three commands answer 404 for an unknown battle', async () => {
+    for (const path of ['/end-turn', '/wait', '/speed']) {
+      const { status, body } = await post(`/battles/no-such-battle${path}`, { unitId: 'a', speed: 9 });
+
+      expect(status).toBe(404);
+      expect(body.error).toBe('Бой не найден');
+    }
+  });
+});
 });
 
 /** Two swordsmen (no hero) standing next to each other. */

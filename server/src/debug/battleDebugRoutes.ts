@@ -271,6 +271,84 @@ export function createBattleDebugRouter(): Router {
     );
   });
 
+  // The current unit is done: the queue moves on. Thin translation of endTurn()
+  // — the rules of when a round ends live in Battle, not here.
+  router.post('/battles/:id/end-turn', (request, response) => {
+    const battle = findBattle(request.params.id);
+
+    if (battle === undefined) {
+      response.status(404).json({ error: 'Бой не найден' });
+      return;
+    }
+
+    const result = battle.endTurn();
+
+    response.status(200).json(
+      result.ok
+        ? { ok: true, events: result.events, state: battle.getState() }
+        : { ...result, state: battle.getState() },
+    );
+  });
+
+  // The unit moves to the waiting segment of the current round. Same shape.
+  router.post('/battles/:id/wait', (request, response) => {
+    const battle = findBattle(request.params.id);
+
+    if (battle === undefined) {
+      response.status(404).json({ error: 'Бой не найден' });
+      return;
+    }
+
+    const body = (request.body ?? {}) as { unitId?: unknown };
+
+    if (typeof body.unitId !== 'string') {
+      response.status(400).json({
+        ok: false,
+        code: 'BAD_REQUEST',
+        message: 'Ожидалось поле unitId (строка)',
+      });
+      return;
+    }
+
+    const result = battle.wait(body.unitId);
+
+    response.status(200).json(
+      result.ok
+        ? { ok: true, events: result.events, state: battle.getState() }
+        : { ...result, state: battle.getState() },
+    );
+  });
+
+  // Changes the current speed of a unit (a haste or a slow). ANY unit may be
+  // changed, not only the current one: that is how the sandbox checks rule 5.
+  router.post('/battles/:id/speed', (request, response) => {
+    const battle = findBattle(request.params.id);
+
+    if (battle === undefined) {
+      response.status(404).json({ error: 'Бой не найден' });
+      return;
+    }
+
+    const body = (request.body ?? {}) as { unitId?: unknown; speed?: unknown };
+
+    if (typeof body.unitId !== 'string' || typeof body.speed !== 'number' || !Number.isFinite(body.speed)) {
+      response.status(400).json({
+        ok: false,
+        code: 'BAD_REQUEST',
+        message: 'Ожидались поля unitId (строка) и speed (число)',
+      });
+      return;
+    }
+
+    const result = battle.setUnitSpeed(body.unitId, body.speed);
+
+    response.status(200).json(
+      result.ok
+        ? { ok: true, events: result.events, state: battle.getState() }
+        : { ...result, state: battle.getState() },
+    );
+  });
+
   // The targets the sandbox should highlight. WHICH targets those are is decided
   // by Battle; this route only shapes the answer as { targetId, kind }.
   router.get('/battles/:id/targets', (request, response) => {
