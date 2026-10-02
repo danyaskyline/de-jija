@@ -1,0 +1,88 @@
+# Карта репозитория de-jija
+
+> Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
+> Всего файлов: 58. Обновляй карту после добавления/удаления/переименования файлов.
+
+Как читать репо экономно: сначала [`START-HERE.md`](../START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
+
+## Корень репозитория
+
+- [`.clineignore`](https://github.com/danyaskyline/de-jija/blob/main/.clineignore)
+- [`.gitattributes`](https://github.com/danyaskyline/de-jija/blob/main/.gitattributes)
+- [`.gitignore`](https://github.com/danyaskyline/de-jija/blob/main/.gitignore)
+- [`package.json`](https://github.com/danyaskyline/de-jija/blob/main/package.json) — _данные/конфиг (JSON)_
+- [`README.md`](https://github.com/danyaskyline/de-jija/blob/main/README.md) — de-jija
+- [`START-HERE.md`](https://github.com/danyaskyline/de-jija/blob/main/START-HERE.md) — START-HERE — входная точка для ИИ-агента
+- [`tsconfig.base.json`](https://github.com/danyaskyline/de-jija/blob/main/tsconfig.base.json) — _данные/конфиг (JSON)_
+
+## docs
+
+- [`docs/architecture.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/architecture.md) — Architecture
+- [`docs/battle.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/battle.md) — Battle — модель боя (инстанс боя)
+- [`docs/combat-formula.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/combat-formula.md) — Формула урона (resolveAttack)
+- [`docs/conventions.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/conventions.md) — Conventions — правила проекта
+- [`docs/decisions.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/decisions.md) — Decisions — журнал архитектурных решений
+- [`docs/game-design.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/game-design.md) — Game Design — MMO в духе Heroesland/HoMM3
+- [`docs/tasks/001-turn-queue.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/tasks/001-turn-queue.md) — Задача 001: очередь ходов в бою
+- [`docs/tasks/002-tie-rule-and-priority-indicator.md`](https://github.com/danyaskyline/de-jija/blob/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — Задача 002: правка равной скорости, начальный приоритет и индикатор приоритета
+
+## server
+
+- [`server/debug/battle-sandbox.html`](https://github.com/danyaskyline/de-jija/blob/main/server/debug/battle-sandbox.html) — _HTML-страница_
+- [`server/debug/combat-sandbox.html`](https://github.com/danyaskyline/de-jija/blob/main/server/debug/combat-sandbox.html) — _HTML-страница_
+- [`server/package.json`](https://github.com/danyaskyline/de-jija/blob/main/server/package.json) — _данные/конфиг (JSON)_
+- [`server/src/battle/battle.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/battle.test.ts) — _без экспортов_
+- [`server/src/battle/battle.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/battle.ts) — экспорты: BattleDeps, CommandOk, Battle, createBattle
+- [`server/src/battle/battleRules.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/battleRules.test.ts) — _без экспортов_
+- [`server/src/battle/battleRules.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/battleRules.ts) — экспорты: DEFAULT_BATTLE_RULES_PATH, BattleRules, parseBattleRules, loadBattleRules, setBattleRules, getBattl…
+- [`server/src/battle/battleTurns.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/battleTurns.test.ts) — _без экспортов_
+- [`server/src/battle/hex.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/hex.test.ts) — _без экспортов_
+- [`server/src/battle/turnQueue.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/turnQueue.test.ts) — _без экспортов_
+- [`server/src/battle/turnQueue.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/battle/turnQueue.ts) — экспорты: TurnQueueUnit, TurnGroup, levelRank, InitialPriorityReason, InitialPriority, decideInitialPriority,…
+- [`server/src/combat/combatant.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/combatant.test.ts) — _без экспортов_
+- [`server/src/combat/combatant.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/combatant.ts) — экспорты: emptyCombatBonuses, combinePercentBonuses, buildCombatant
+- [`server/src/combat/combatRules.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/combatRules.test.ts) — _без экспортов_
+- [`server/src/combat/combatRules.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/combatRules.ts) — экспорты: DEFAULT_COMBAT_RULES_PATH, CombatRules, loadCombatRules, setCombatRules, getCombatRules, initCombat…
+- [`server/src/combat/heroModifiers.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/heroModifiers.test.ts) — _без экспортов_
+- [`server/src/combat/heroModifiers.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/heroModifiers.ts) — экспорты: HeroModifiers, MAX_HERO_SKILLS, ATTACK_TARGETS_IN_USE, skillAffectsAttackNow, emptyHeroModifiers, a…
+- [`server/src/combat/resolveAttack.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/resolveAttack.test.ts) — _без экспортов_
+- [`server/src/combat/resolveAttack.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/resolveAttack.ts) — экспорты: AttackContext, DamageBreakdown, AttackResult, LUCK_LEVEL_MIN, LUCK_LEVEL_MAX, clampLuckLevel, …
+- [`server/src/combat/skills.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/skills.test.ts) — _без экспортов_
+- [`server/src/combat/skills.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/skills.ts) — экспорты: DEFAULT_SKILLS_PATH, SkillTarget, SKILL_TARGETS, SkillEffect, Skill, SkillsData, …
+- [`server/src/combat/testFixtures.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/combat/testFixtures.ts) — экспорты: CombatFixture, combatFixtures, getFixture, fixtureToUnit, antimage, swordsman, …
+- [`server/src/debug/battleDebugRoutes.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/debug/battleDebugRoutes.test.ts) — _без экспортов_
+- [`server/src/debug/battleDebugRoutes.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/debug/battleDebugRoutes.ts) — экспорты: MAX_BATTLES, clearBattles, battleCount, createBattleDebugRouter
+- [`server/src/debug/battleSandboxPage.smoke.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/debug/battleSandboxPage.smoke.test.ts) — _без экспортов_
+- [`server/src/debug/debugRoutes.test.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/debug/debugRoutes.test.ts) — _без экспортов_
+- [`server/src/debug/debugRoutes.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/debug/debugRoutes.ts) — экспорты: createDebugRouter
+- [`server/src/index.ts`](https://github.com/danyaskyline/de-jija/blob/main/server/src/index.ts) — _без экспортов_
+- [`server/tsconfig.json`](https://github.com/danyaskyline/de-jija/blob/main/server/tsconfig.json) — _данные/конфиг (JSON)_
+
+## client
+
+- [`client/index.html`](https://github.com/danyaskyline/de-jija/blob/main/client/index.html) — _HTML-страница_
+- [`client/package.json`](https://github.com/danyaskyline/de-jija/blob/main/client/package.json) — _данные/конфиг (JSON)_
+- [`client/src/main.ts`](https://github.com/danyaskyline/de-jija/blob/main/client/src/main.ts) — _без экспортов_
+- [`client/tsconfig.json`](https://github.com/danyaskyline/de-jija/blob/main/client/tsconfig.json) — _данные/конфиг (JSON)_
+
+## shared
+
+- [`shared/package.json`](https://github.com/danyaskyline/de-jija/blob/main/shared/package.json) — _данные/конфиг (JSON)_
+- [`shared/src/hex.ts`](https://github.com/danyaskyline/de-jija/blob/main/shared/src/hex.ts) — экспорты: toCube, distance, neighbors, isInside, isSameHex
+- [`shared/src/index.ts`](https://github.com/danyaskyline/de-jija/blob/main/shared/src/index.ts) — экспорты: PingMessage, PongMessage, ClientMessage, ServerMessage, UnitStats, AbilityTag, …
+- [`shared/tsconfig.json`](https://github.com/danyaskyline/de-jija/blob/main/shared/tsconfig.json) — _данные/конфиг (JSON)_
+
+## config
+
+- [`config/battle-rules.json`](https://github.com/danyaskyline/de-jija/blob/main/config/battle-rules.json) — _данные/конфиг (JSON)_
+- [`config/combat-rules.json`](https://github.com/danyaskyline/de-jija/blob/main/config/combat-rules.json) — _данные/конфиг (JSON)_
+- [`config/skills.json`](https://github.com/danyaskyline/de-jija/blob/main/config/skills.json) — _данные/конфиг (JSON)_
+
+## tools
+
+- [`tools/gen-index.mjs`](https://github.com/danyaskyline/de-jija/blob/main/tools/gen-index.mjs) — _без экспортов_
+
+## .clinerules
+
+- [`.clinerules/01-workflow.md`](https://github.com/danyaskyline/de-jija/blob/main/.clinerules/01-workflow.md) — Правила работы над проектом de-jija
+- [`.clinerules/handoff.md`](https://github.com/danyaskyline/de-jija/blob/main/.clinerules/handoff.md) — Handoff между ИИ-агентами — как передавать контекст

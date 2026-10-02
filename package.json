@@ -13,6 +13,7 @@
     "dev:client": "npm run dev --workspace @de-jija/client",
     "build:client": "npm run build --workspace @de-jija/client",
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "map": "node tools/gen-index.mjs"
   }
 }
