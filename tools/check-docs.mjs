@@ -6,6 +6,8 @@ import { join, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkLinks } from './checks/links.mjs';
+import { checkIndexFresh } from './checks/index-freshness.mjs';
+import { renderIndex } from './gen-index.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const warnings = [];
@@ -47,6 +49,16 @@ const countLines = (rel) => read(rel).split(/\r?\n/).length - 1;
 const git = (args) => {
   try {
     return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+};
+
+// Same as git(), but keeps the content byte-exact — needed when comparing file
+// contents (trim() would eat the trailing newline and never match).
+const gitRaw = (args) => {
+  try {
+    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
     return '';
   }
@@ -167,6 +179,16 @@ for (const rel of collectNeutralFiles()) {
     .flatMap(mdFilesUnder)
     .map((rel) => ({ rel, text: read(rel) }));
   errors.push(...checkLinks(files, (target) => existsSync(join(ROOT, target))).errors);
+}
+
+// (b) docs/INDEX.md must match a freshly generated map.
+{
+  // Compare against the version git knows (staged if there is one, else HEAD),
+  // so this check never rewrites the working tree itself.
+  const staged = gitRaw(['show', ':docs/INDEX.md']);
+  const head = gitRaw(['show', 'HEAD:docs/INDEX.md']);
+  const committed = staged !== '' ? staged : head !== '' ? head : null;
+  errors.push(...checkIndexFresh(committed, renderIndex()).errors);
 }
 
 // --- Output ------------------------------------------------------------------

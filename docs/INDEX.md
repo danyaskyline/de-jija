@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 73. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 75. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -87,9 +87,11 @@
 ## tools
 
 - [`tools/check-docs.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/check-docs.mjs) — _без экспортов_
+- [`tools/checks/index-freshness.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/index-freshness.mjs) — экспорты: checkIndexFresh
+- [`tools/checks/index-freshness.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/index-freshness.test.mjs) — _без экспортов_
 - [`tools/checks/links.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/links.mjs) — экспорты: LINK_SCAN_FILES, findRelativeLinks, checkLinks, resolveRelative
 - [`tools/checks/links.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/links.test.mjs) — _без экспортов_
-- [`tools/gen-index.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/gen-index.mjs) — _без экспортов_
+- [`tools/gen-index.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/gen-index.mjs) — экспорты: renderIndex
 
 ## .clinerules
 

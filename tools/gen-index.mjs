@@ -1,9 +1,11 @@
 // Generates docs/INDEX.md — a map of the repository for AI agents.
 // Usage: npm run map. Links are raw: they can be fetched directly without the GitHub UI.
 // Ignores: node_modules, dist, .git, package-lock.json, client/dist
+// Also exports renderIndex(), so `npm run check` can generate the expected content
+// in memory and compare it with the committed file without touching the work tree.
 
-import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join, relative, sep, basename } from 'node:path';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -69,41 +71,55 @@ function describe(absPath) {
   return '';
 }
 
-const files = walk(ROOT).sort((a, b) => a.localeCompare(b, 'en'));
+/**
+ * Build the INDEX.md content in memory.
+ * Used both by `npm run map` (which writes it) and by `npm run check`
+ * (which only compares, so the working tree is never modified).
+ */
+export function renderIndex() {
+  const files = walk(ROOT).sort((a, b) => a.localeCompare(b, 'en'));
 
-// Group by top-level folder; root files come first as "(корень)".
-const groups = new Map();
-for (const rel of files) {
-  const top = rel.includes('/') ? rel.slice(0, rel.indexOf('/')) : '(корень)';
-  if (!groups.has(top)) groups.set(top, []);
-  groups.get(top).push(rel);
-}
-
-const ORDER = ['(корень)', 'docs', 'server', 'client', 'shared', 'config', 'tools'];
-const sortedGroups = [...groups.keys()].sort((a, b) => {
-  const ia = ORDER.indexOf(a);
-  const ib = ORDER.indexOf(b);
-  return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b, 'en');
-});
-
-const out = [];
-out.push('# Карта репозитория de-jija');
-out.push('');
-out.push('> Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.');
-out.push(`> Всего файлов: ${files.length}. Обновляй карту после добавления/удаления/переименования файлов.`);
-out.push('');
-out.push('Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.');
-out.push('');
-
-for (const g of sortedGroups) {
-  out.push(`## ${g === '(корень)' ? 'Корень репозитория' : g}`);
-  out.push('');
-  for (const rel of groups.get(g)) {
-    const desc = describe(join(ROOT, rel));
-    out.push(`- [\`${rel}\`](${RAW}/${rel})${desc ? ` — ${desc}` : ''}`);
+  // Group by top-level folder; root files come first as "(корень)".
+  const groups = new Map();
+  for (const rel of files) {
+    const top = rel.includes('/') ? rel.slice(0, rel.indexOf('/')) : '(корень)';
+    if (!groups.has(top)) groups.set(top, []);
+    groups.get(top).push(rel);
   }
+
+  const ORDER = ['(корень)', 'docs', 'server', 'client', 'shared', 'config', 'tools'];
+  const sortedGroups = [...groups.keys()].sort((a, b) => {
+    const ia = ORDER.indexOf(a);
+    const ib = ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b, 'en');
+  });
+
+  const out = [];
+  out.push('# Карта репозитория de-jija');
   out.push('');
+  out.push('> Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.');
+  out.push(`> Всего файлов: ${files.length}. Обновляй карту после добавления/удаления/переименования файлов.`);
+  out.push('');
+  out.push('Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.');
+  out.push('');
+
+  for (const g of sortedGroups) {
+    out.push(`## ${g === '(корень)' ? 'Корень репозитория' : g}`);
+    out.push('');
+    for (const rel of groups.get(g)) {
+      const desc = describe(join(ROOT, rel));
+      out.push(`- [\`${rel}\`](${RAW}/${rel})${desc ? ` — ${desc}` : ''}`);
+    }
+    out.push('');
+  }
+
+  return out.join('\n');
 }
 
-writeFileSync(OUT, out.join('\n'), 'utf8');
-console.log(`docs/INDEX.md: ${files.length} файлов, ${sortedGroups.length} групп -> ${relative(ROOT, OUT)}`);
+// When run directly as a script, write the file. When imported, only export.
+if (process.argv[1] && process.argv[1].endsWith('gen-index.mjs')) {
+  const content = renderIndex();
+  writeFileSync(OUT, content, 'utf8');
+  const count = (content.match(/^- \[`/gm) || []).length;
+  console.log(`docs/INDEX.md: ${count} файлов -> ${relative(ROOT, OUT)}`);
+}
