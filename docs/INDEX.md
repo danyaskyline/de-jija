@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 79. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 87. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -91,10 +91,18 @@
 - [`tools/checks/active-task.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.test.mjs) — _без экспортов_
 - [`tools/checks/adr-numbers.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-numbers.mjs) — экспорты: checkAdrNumbers
 - [`tools/checks/adr-numbers.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-numbers.test.mjs) — _без экспортов_
+- [`tools/checks/config-keys.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/config-keys.mjs) — экспорты: checkConfigKeysInDoc
+- [`tools/checks/config-keys.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/config-keys.test.mjs) — _без экспортов_
+- [`tools/checks/formula-doc-pairing.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/formula-doc-pairing.mjs) — экспорты: checkFormulaDocPairing
+- [`tools/checks/formula-doc-pairing.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/formula-doc-pairing.test.mjs) — _без экспортов_
 - [`tools/checks/index-freshness.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/index-freshness.mjs) — экспорты: checkIndexFresh
 - [`tools/checks/index-freshness.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/index-freshness.test.mjs) — _без экспортов_
 - [`tools/checks/links.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/links.mjs) — экспорты: LINK_SCAN_FILES, findRelativeLinks, checkLinks, resolveRelative
 - [`tools/checks/links.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/links.test.mjs) — _без экспортов_
+- [`tools/checks/mutable-links.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/mutable-links.mjs) — экспорты: checkMutableLinks
+- [`tools/checks/mutable-links.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/mutable-links.test.mjs) — _без экспортов_
+- [`tools/checks/secrets.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/secrets.mjs) — экспорты: checkSecrets
+- [`tools/checks/secrets.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/secrets.test.mjs) — _без экспортов_
 - [`tools/gen-index.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/gen-index.mjs) — экспорты: renderIndex
 
 ## .clinerules

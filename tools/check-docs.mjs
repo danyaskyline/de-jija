@@ -9,6 +9,10 @@ import { checkLinks } from './checks/links.mjs';
 import { checkIndexFresh } from './checks/index-freshness.mjs';
 import { checkActiveTask } from './checks/active-task.mjs';
 import { checkAdrNumbers } from './checks/adr-numbers.mjs';
+import { checkFormulaDocPairing } from './checks/formula-doc-pairing.mjs';
+import { checkConfigKeysInDoc } from './checks/config-keys.mjs';
+import { checkSecrets } from './checks/secrets.mjs';
+import { checkMutableLinks } from './checks/mutable-links.mjs';
 import { renderIndex } from './gen-index.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -46,6 +50,14 @@ const NEUTRAL_FILES = ['START-HERE.md', 'AGENTS.md', 'docs/conventions.md', 'doc
 
 const warn = (msg) => warnings.push(msg);
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
+// Same as read(), but tolerates unreadable/binary files instead of throwing.
+const readRaw = (rel) => {
+  try {
+    return readFileSync(join(ROOT, rel), 'latin1');
+  } catch {
+    return '';
+  }
+};
 const countLines = (rel) => read(rel).split(/\r?\n/).length - 1;
 
 const git = (args) => {
@@ -65,6 +77,11 @@ const gitRaw = (args) => {
     return '';
   }
 };
+
+// Everything below runs inside a try/catch: an unexpected failure must print a
+// readable message, never a raw stack trace, and must be distinguishable from a
+// normal "errors found" exit (1) — hence exit code 2.
+try {
 
 // --- 1. START-HERE.md: total length and part B length ------------------------
 const SH_MAX_TOTAL = 90;
@@ -204,6 +221,50 @@ errors.push(
   errors.push(...checkAdrNumbers(read('docs/decisions.md'), taskFiles).errors);
 }
 
+// (e) The damage formula and its document must change in the same commit.
+// Locally we inspect what is about to be committed; CI passes a commit range
+// through CHECK_RANGE (e.g. "origin/main..HEAD") so a whole push is covered.
+{
+  const range = process.env.CHECK_RANGE;
+  const changed = range
+    ? git(['diff', '--name-only', range]).split('\n').map((s) => s.trim()).filter(Boolean)
+    : git(['diff', '--cached', '--name-only']).split('\n').map((s) => s.trim()).filter(Boolean);
+  errors.push(...checkFormulaDocPairing(changed).errors);
+}
+
+// (f) Config keys named in docs/combat-formula.md must exist in config/*.json.
+{
+  const configDir = join(ROOT, 'config');
+  const keys = [];
+  if (existsSync(configDir)) {
+    for (const name of readdirSync(configDir)) {
+      if (!name.endsWith('.json')) continue;
+      const parsed = JSON.parse(read(`config/${name}`));
+      for (const k of Object.keys(parsed)) keys.push(k);
+    }
+  }
+  errors.push(...checkConfigKeysInDoc(read('docs/combat-formula.md'), keys).errors);
+}
+
+// (g) No secrets and no private local paths in git-tracked files.
+// docs/conventions.md is exempt: it quotes these patterns as examples on purpose.
+{
+  const tracked = git(['ls-files']).split('\n').map((s) => s.trim()).filter(Boolean);
+  const files = tracked
+    // Skip binaries/dependencies that are generated, not authored.
+    .filter((rel) => rel !== 'package-lock.json' && !/\.(png|jpe?g|gif|webp|ico|woff2?|ttf|eot|zip|gz|pdf|mp3|wav|ogg|mp4)$/i.test(rel))
+    .map((rel) => ({ rel, text: readRaw(rel) }));
+  errors.push(...checkSecrets(files, ['docs/conventions.md']).errors);
+}
+
+// (h, WARNING only) Mutable "main" links in docs/ — task 004 will replace them.
+{
+  const files = mdFilesUnder('docs')
+    .filter((rel) => rel !== 'docs/INDEX.md') // generated map, full of such links by design
+    .map((rel) => ({ rel, text: read(rel) }));
+  warnings.push(...checkMutableLinks(files, ['docs/INDEX.md']).warnings);
+}
+
 // --- Output ------------------------------------------------------------------
 if (errors.length > 0) {
   console.log(`ERRORS (${errors.length}) — fix these before committing:`);
@@ -212,8 +273,17 @@ if (errors.length > 0) {
 if (warnings.length === 0) {
   if (errors.length === 0) console.log('docs OK');
 } else {
-  console.log(`docs: ${warnings.length} предупреждени(й)`);
+  console.log(`docs: ${warnings.length} warning(s)`);
   for (const w of warnings) console.log(`  - ${w}`);
 }
 // Errors block; warnings never do.
 process.exit(errors.length > 0 ? 1 : 0);
+
+} catch (err) {
+  // The checker itself broke (missing file, unreadable JSON, git unavailable).
+  // That is NOT the same as "your docs are wrong", so it gets its own exit code.
+  console.error('check-docs crashed — the checker itself failed, your docs may be fine.');
+  console.error(`Reason: ${err && err.message ? err.message : String(err)}`);
+  console.error('Fix: verify that the repository files exist and git works, then re-run npm run check.');
+  process.exit(2);
+}
