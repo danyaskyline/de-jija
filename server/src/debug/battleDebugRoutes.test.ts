@@ -270,14 +270,17 @@ describe('POST /debug/battles/:id/attack', () => {
 
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
-    // A melee hit between neighbours: the hit and the retaliation. The queue events
-    // are NOT asserted here: the sandbox may hit with any unit, and whether the
-    // turn moves on depends on whose turn it happened to be (the coin is real
-    // Math.random here). The queue itself is covered by the Battle tests.
-    expect(body.events?.map((event) => event.type)).toEqual([
-      'AttackResolved',
-      'RetaliationResolved',
-    ]);
+    // A melee hit between neighbours: the hit and the retaliation.
+    //
+    // Queue events (TurnStarted / PriorityPassed) are NOT asserted here on purpose:
+    // this route uses the REAL Math.random for the priority coin, so whether the
+    // hit ends the turn depends on whose turn it happened to be. Asserting them
+    // would make this test flaky. The queue itself is covered by battleTurns.test.ts.
+    const hitEvents = (body.events ?? []).map((event) => event.type).filter(
+      (type) => type === 'AttackResolved' || type === 'RetaliationResolved',
+    );
+
+    expect(hitEvents).toEqual(['AttackResolved', 'RetaliationResolved']);
 
     const defender = body.state?.units.find((item) => item.id === 'b');
 
