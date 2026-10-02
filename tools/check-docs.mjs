@@ -5,9 +5,30 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { checkLinks } from './checks/links.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const warnings = [];
+const errors = [];
+
+/** Collect every markdown file under a repo-relative path (file or directory). */
+const mdFilesUnder = (rel) => {
+  const abs = join(ROOT, rel);
+  if (!existsSync(abs)) return [];
+  if (statSync(abs).isDirectory()) {
+    const out = [];
+    const walkDir = (d) => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const full = join(d, e.name);
+        if (e.isDirectory()) walkDir(full);
+        else if (e.name.endsWith('.md')) out.push(relative(ROOT, full).split(sep).join('/'));
+      }
+    };
+    walkDir(abs);
+    return out;
+  }
+  return [rel];
+};
 
 // Concrete model/tool names that must not leak into the process documentation.
 // Kept as one list so it is cheap to keep in sync.
@@ -138,11 +159,26 @@ for (const rel of collectNeutralFiles()) {
   if (hits.length > 0) warn(`${rel}: названия конкретных инструментов — ${hits.join(', ')}`);
 }
 
+// --- 8. Blocking checks -----------------------------------------------------
+
+// (a) Broken relative links in docs/*.md and START-HERE.md.
+{
+  const files = ['START-HERE.md', 'docs']
+    .flatMap(mdFilesUnder)
+    .map((rel) => ({ rel, text: read(rel) }));
+  errors.push(...checkLinks(files, (target) => existsSync(join(ROOT, target))).errors);
+}
+
 // --- Output ------------------------------------------------------------------
+if (errors.length > 0) {
+  console.log(`ERRORS (${errors.length}) — fix these before committing:`);
+  for (const e of errors) console.log(`  - ${e}`);
+}
 if (warnings.length === 0) {
-  console.log('docs OK');
+  if (errors.length === 0) console.log('docs OK');
 } else {
   console.log(`docs: ${warnings.length} предупреждени(й)`);
   for (const w of warnings) console.log(`  - ${w}`);
 }
-process.exit(0);
+// Errors block; warnings never do.
+process.exit(errors.length > 0 ? 1 : 0);
