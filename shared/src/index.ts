@@ -410,8 +410,11 @@ export type TurnQueueState = {
    *
    * It is stored rather than calculated by the interface: rule 4b is a GAME
    * RULE, and game rules live only in the battle engine, never in the sandbox or
-   * the client. It is written in the same single place as `prioritySide`, so the
-   * two cannot disagree.
+   * the client. It is written through `setPrioritySide` in `battle.ts` — the one
+   * place that changes the priority — plus a literal when the battle is created,
+   * which `rollPriority` immediately overwrites with the real value. Two writers
+   * exist, so this is not a guarantee: an invariant test checks that the two
+   * fields stay opposite after creation and after every command.
    */
   nextPrioritySide: BattleSide;
   /**

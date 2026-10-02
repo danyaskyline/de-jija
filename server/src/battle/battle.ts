@@ -141,12 +141,15 @@ export class Battle {
   private groups: TurnGroup[] = [];
 
   /**
-   * The ONLY place where the priority side is written.
+   * The only method that changes `prioritySide`, so it writes `nextPrioritySide`
+   * next to it and the indicator follows the real priority.
    *
    * Rule 4b ("after a draw the priority passes to the OTHER side") lives in
    * `oppositeSide` and nowhere else — not in the sandbox, not in the client.
-   * Both `prioritySide` and the indicator field `nextPrioritySide` are written
-   * together here, so the indicator can never disagree with the real priority.
+   *
+   * This is NOT a guarantee that the two fields can never disagree: `createBattle`
+   * starts the state with a literal that `rollPriority` overwrites right after.
+   * Two writers exist; an invariant test is what checks them, not this comment.
    */
   private setPrioritySide(side: BattleSide): void {
     this.state.turns.prioritySide = side;
