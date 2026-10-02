@@ -68,14 +68,14 @@
 
 > Эта часть **перезаписывается целиком** при каждом handoff, а не дописывается. Не больше 30 строк.
 
-- **Активная задача:** [docs/tasks/002-tie-rule-and-priority-indicator.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — на паузе, сделано шагов 0–3 из 7.
+- **Активная задача:** [docs/tasks/002-tie-rule-and-priority-indicator.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — на паузе, сделано шаги 0–3 из 7.
 - **Цель:** правка равной скорости в очереди ходов, начальный приоритет и индикатор приоритета в бою.
-- **Сделано:** шаг 1 — каскад равной скорости (`orderEqualSpeedGroup`); шаг 2 — начальный приоритет `decideInitialPriority`; шаг 3 — правило 2 «новичок в уже разрешённой группе» (память групп `ResolvedGroup` в `server/src/battle/battle.ts`, приоритет тратится по параметру `keepCurrent`, не по `state.turns.currentUnitId`).
+- **Сделано:** шаг 1 — каскад равной скорости (`orderEqualSpeedGroup`); шаг 2 — начальный приоритет `decideInitialPriority`; шаг 3 — правило «новичок в уже разрешённой группе» (память групп `ResolvedGroup` в `server/src/battle/battle.ts`; приоритет тратится по параметру `keepCurrent`, не по `state.turns.currentUnitId`).
 - **В процессе:** ничего — остановлено на границе шагов 3 и 4.
-- **Следующий шаг:** **шаг 4 — индикатор приоритета** (`nextPrioritySide`, `initialPriorityReason`). Затем шаг 5 — транспорт (`wait` / `end-turn` / `speed`), шаг 6 — боевая песочница в `battle-sandbox.html`, шаг 7 — `docs/battle.md`, ADR 022, строка статуса в 021, раздел «Итог», финальный push.
+- **Следующий шаг:** **шаг 4 — индикатор приоритета** (`nextPrioritySide`, `initialPriorityReason`). Далее: шаг 5 — транспорт (`wait` / `end-turn` / `speed`), шаг 6 — боевая песочница в `battle-sandbox.html`, шаг 7 — `docs/battle.md`, ADR 022 (номер зарезервирован под эту задачу), строка статуса в 021, раздел «Итог», финальный push.
 - **Тронутые файлы (002, шаги 1–3):** `server/src/battle/battle.ts`, `server/src/battle/turnQueue.ts`, `server/src/battle/battleTurns.test.ts`, `server/src/battle/battle.test.ts`, `server/src/battle/turnQueue.test.ts`, `docs/tasks/002-tie-rule-and-priority-indicator.md`.
-- **Как проверить:** `npm test` и `npm run typecheck` из корня; песочница боя — `npm run dev:server` + `http://127.0.0.1:3000/debug/battle-sandbox`; карта репо — `npm run map`.
+- **Как проверить:** `npm test` и `npm run typecheck` из корня; песочница — `npm run dev:server` и `http://127.0.0.1:3000/debug/battle-sandbox`; карта репо — `npm run map`; актуальность доков — `npm run check`.
 - **Тесты:** зелёные — `npm test`: 13 файлов, 356 тестов passed (battleTurns 43, battle 77, resolveAttack 69, turnQueue 38, T6-фаззинг 200 случайных боёв). `npm run typecheck` чистый.
 - **Подводные камни:** T1 на шаге 3 усилен третьим юнитом группы (иначе не доказывал ветку (а)); T3 не отличает ветку (в) от (б) — их доказывают существующие тесты и T6; T6 ловит почти любое отключение, это ожидаемо. `config/*.json` читается один раз при старте сервера — после правки нужен рестарт.
-- **Открытые вопросы:** нет.
-- **Обновлено:** 2026-10-02, роль CLI-агент (в часть A возвращён блок «Главные принципы»; задача 002 без изменений — на паузе между шагами 3 и 4).
+- **Открытые вопросы:** решение автора — выносить ли внутренние цифры (300–500 онлайн, цель 1000, старт 40–60) из `docs/game-design.md` в приватный файл; в `.gitignore` есть `data/` и `local/` — не создавать там игровые данные.
+- **Обновлено:** 2026-10-02, роль CLI-агент (handoff после базовой проверки безопасности; задача 002 без изменений — на паузе между шагами 3 и 4).
