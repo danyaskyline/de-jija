@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 90. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 92. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -28,9 +28,10 @@
 - [`docs/tasks/002-tie-rule-and-priority-indicator.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — Задача 002: правка равной скорости, начальный приоритет и индикатор приоритета
 - [`docs/tasks/003-blocking-checks.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/003-blocking-checks.md) — Задача 003: блокирующие проверки, git-хуки и CI
 - [`docs/workflow/done.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/done.md) — Done — закрыть шаг или задачу
-- [`docs/workflow/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/handoff.md) — Handoff — передать контекст в новую сессию
+- [`docs/workflow/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/handoff.md) — Handoff — передать состояние в веб-ИИ
 - [`docs/workflow/start.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/start.md) — Start — начать или продолжить сессию
-- [`docs/workflow/sync.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/sync.md) — Sync — записать решения, полученные вне репозитория
+- [`docs/workflow/sync.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/sync.md) — Sync — записать ответ веб-ИИ в репозиторий
+- [`docs/workflow/web-ai.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/web-ai.md) — Роль веб-ИИ и как к нему обращаться
 
 ## server
 
@@ -121,3 +122,7 @@
 
 - [`.githooks/pre-commit`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-commit)
 - [`.githooks/pre-push`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-push)
+
+## local
+
+- [`local/ask/000-example.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/local/ask/000-example.md) — Пакет 000 — ПРИМЕР формата, не отправлять веб-ИИ
