@@ -44,14 +44,22 @@ import { aggregateHeroModifiers } from '../combat/heroModifiers';
 import { resolveAttack } from '../combat/resolveAttack';
 import type { SkillsData } from '../combat/skills';
 import type { BattleRules } from './battleRules';
+import { buildTurnOrder, type TurnGroup, type TurnQueueUnit } from './turnQueue';
 
 /** Everything Battle needs from the outside; injected so tests are deterministic. */
 export type BattleDeps = {
   combatRules: CombatRules;
   skillsData: SkillsData;
   battleRules: BattleRules;
-  /** Random source for damage and luck rolls. Defaults to Math.random. */
+  /** Random source for damage, luck and the priority coin. Defaults to Math.random. */
   random?: () => number;
+  /**
+   * Refuses acting out of turn (code NOT_YOUR_TURN). OFF by default, because the
+   * sandbox and /debug/battles know nothing about the queue yet; the real game
+   * turns it on in one place. The queue itself is built and maintained either
+   * way — this switch only turns the CHECK on (docs/tasks/001-turn-queue.md).
+   */
+  enforceTurns?: boolean;
 };
 
 /** A successful command that produced events. */
@@ -77,6 +85,21 @@ export class Battle {
 
   private readonly placementMode: 'free' | 'startZone';
 
+  /** True when acting out of turn must be refused (see BattleDeps.enforceTurns). */
+  private readonly enforceTurns: boolean;
+
+  /**
+   * Rule 4g memory: for every unit of an ALREADY RESOLVED equal-speed group, the
+   * ready order of that group. When the queue is recalculated inside a round (a
+   * haste-like speed change, a death), a group that still contains such a unit
+   * inherits that order and the priority is NOT spent a second time. Cleared when
+   * a new round starts — the next round resolves its draws from scratch.
+   */
+  private readonly resolvedOrders = new Map<string, string[]>();
+
+  /** The groups of the current order, kept so the head can be resolved lazily. */
+  private groups: TurnGroup[] = [];
+
   constructor(
     state: BattleState,
     units: BattleUnit[],
@@ -87,6 +110,7 @@ export class Battle {
     this.deps = deps;
     this.placementMode = placementMode;
     this.random = deps.random ?? Math.random;
+    this.enforceTurns = deps.enforceTurns === true;
 
     for (const unit of units) {
       this.units.set(unit.id, unit);
@@ -169,6 +193,12 @@ export class Battle {
     if (attacker.side === defender.side) {
       return refuse('SAME_SIDE', 'Огонь по своим не поддерживается');
     }
+    // With enforceTurns on, only the unit whose turn it is may act at all. With
+    // it off (the sandbox) the hit is allowed, but such a hit must NOT move the
+    // queue — see finishTurnOf.
+    if (this.enforceTurns && this.state.turns.currentUnitId !== attackerId) {
+      return this.refuseOutOfTurn(attackerId, 'Атаковать');
+    }
     if (attacker.hexes.length === 0 || defender.hexes.length === 0) {
       return refuse(
         'NOT_PLACED',
@@ -212,22 +242,100 @@ export class Battle {
 
     this.state.attacksStarted = true;
 
-    return this.finish(events);
+    // A hit by the unit whose turn it IS ends that turn and moves the queue; a
+    // hit by anybody else (sandbox, enforceTurns off) leaves the queue alone.
+    return this.finish(this.finishTurnOf(attackerId, events));
   }
 
-  /** New round: round + 1 and retaliation counters back to full (section 9). */
-  nextRound(): CommandResult<CommandOk> {
-    this.state.round += 1;
+  /**
+   * The unit that acts now finishes its turn without doing anything: the queue
+   * moves on, and the round starts by itself when it was the last one (rule 2).
+   */
+  endTurn(): CommandResult<CommandOk> {
+    return this.finish(this.endCurrentTurn());
+  }
 
-    for (const unit of this.state.units) {
-      if (unit.aliveCount <= 0) {
-        continue;
-      }
-      // Shots are NOT restored: they are a whole-battle resource.
-      unit.retaliationsLeft = unit.unit.retaliationsPerRound ?? 1;
+  /**
+   * "Wait": the unit moves to the waiting segment of the CURRENT round right away
+   * (rule 2). At most once per battle, and never again inside the waiting segment.
+   */
+  wait(unitId: string): CommandResult<CommandOk> {
+    const unit = this.units.get(unitId);
+
+    if (unit === undefined) {
+      return refuse('UNIT_NOT_FOUND', `Боец "${unitId}" не найден в этом бою`);
+    }
+    if (unit.aliveCount <= 0) {
+      return refuse('UNIT_DEAD', `Боец "${unitId}" уже уничтожен и не может ждать`);
+    }
+    if (unit.hasWaitedThisBattle) {
+      return refuse(
+        'ALREADY_WAITED',
+        `Боец "${unitId}" уже ждал в этом бою: ждать можно не более одного раза за бой`,
+      );
+    }
+    if (this.enforceTurns && this.state.turns.currentUnitId !== unitId) {
+      return this.refuseOutOfTurn(unitId, 'Ждать');
     }
 
-    return this.finish([{ type: 'RoundStarted', round: this.state.round }]);
+    unit.hasWaitedThisBattle = true;
+    unit.hasWaitedThisRound = true;
+
+    const event: BattleEvent = { type: 'UnitWaited', unitId: unit.id, round: this.state.round };
+
+    // The unit that waited does NOT finish its turn: it is moved into the waiting
+    // segment and will act there later in this very round. With enforceTurns off
+    // and a unit that is not the current one, the queue stays as it is (the
+    // sandbox must not break it).
+    if (this.state.turns.currentUnitId !== unitId) {
+      return this.finish([event]);
+    }
+
+    this.rebuildQueue();
+
+    return this.finish([event, ...this.turnHeadToFirst()]);
+  }
+
+  /**
+   * Changes the speed a unit acts with right now (the way a haste-like effect
+   * will do it). The base stat stays untouched, the queue is recalculated, and the
+   * unit whose turn it is now keeps that turn (rule 5).
+   */
+  setUnitSpeed(unitId: string, speed: number): CommandResult<CommandOk> {
+    const unit = this.units.get(unitId);
+
+    if (unit === undefined) {
+      return refuse('UNIT_NOT_FOUND', `Боец "${unitId}" не найден в этом бою`);
+    }
+    if (!Number.isFinite(speed)) {
+      return refuse(
+        'SETUP_INVALID',
+        `Скорость юнита "${unitId}" должна быть числом, а получено: ${JSON.stringify(speed)}`,
+      );
+    }
+
+    const current = this.state.turns.currentUnitId;
+
+    unit.currentSpeed = speed;
+
+    // The unit whose turn it IS keeps that turn (rule 5); only the rest of the
+    // queue is recalculated.
+    if (current === unitId) {
+      return this.finish([]);
+    }
+
+    this.rebuildQueue(current);
+
+    return this.finish(this.turnHeadToFirst(current));
+  }
+
+  /**
+   * Starts the next round by hand: the sandbox uses it, and it stays for
+   * compatibility. The queue normally moves on by ITSELF when the round runs out
+   * (see endCurrentTurn); this command does exactly the same thing.
+   */
+  nextRound(): CommandResult<CommandOk> {
+    return this.finish(this.startNextRound());
   }
 
   /** Alive, placed enemies the unit may hit right now, with the kind of hit. */
@@ -394,6 +502,259 @@ export class Battle {
       ...(options.fixedLuckRoll === undefined ? {} : { fixedLuckRoll: options.fixedLuckRoll }),
       ...(options.moraleExtraAttack === true ? { isMoraleBonusAttack: true } : {}),
     };
+  }
+
+  /* ---------------------------------------------------------------- *
+   * The turn queue (docs/battle.md, "Очередь ходов")
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Rebuilds the order of the current round from the CURRENT state of the units
+   * and moves the pointer to the next one.
+   *
+   * Only alive units that have NOT acted in this round take part: a dead unit
+   * leaves the queue at once (rule 6), and a unit that already had its turn does
+   * not come back even after a speed change (rule 5).
+   */
+  private rebuildQueue(keepCurrent: string | null = null): void {
+    const actors: TurnQueueUnit[] = [];
+
+    // The unit whose turn it is now keeps its place at the head of the queue
+    // even when the rest of it is recalculated (rule 5).
+    if (keepCurrent !== null) {
+      const current = this.units.get(keepCurrent);
+      if (current !== undefined && current.aliveCount > 0) {
+        actors.push({
+          id: current.id,
+          side: current.side,
+          slot: current.slot,
+          currentSpeed: current.currentSpeed,
+          tier: current.unit.tier,
+          upgraded: current.unit.upgraded,
+          hasWaitedThisRound: current.hasWaitedThisRound,
+        });
+      }
+    }
+
+    for (const unit of this.state.units) {
+      if (unit.aliveCount <= 0 || unit.hasActedThisRound) {
+        continue;
+      }
+
+      actors.push({
+        id: unit.id,
+        side: unit.side,
+        slot: unit.slot,
+        currentSpeed: unit.currentSpeed,
+        tier: unit.unit.tier,
+        upgraded: unit.unit.upgraded,
+        hasWaitedThisRound: unit.hasWaitedThisRound,
+      });
+    }
+
+    const order = buildTurnOrder(actors, { prioritySide: this.state.turns.prioritySide });
+
+    // The groups are only BUILT here; the head (and the draw in it, if any) is
+    // resolved by turnHeadToFirst(), which also reports the events.
+    this.groups = order.groups;
+    this.applyResolvedOrders();
+  }
+
+  /**
+   * Rule 4g: a group that contains a unit of an ALREADY RESOLVED group keeps the
+   * order that group already got. The stored list is filtered, so units that
+   * died, already acted or left the group (their speed changed) fall out, and a
+   * newcomer joins at the end by its slot. The priority is not spent again.
+   */
+  private applyResolvedOrders(): void {
+    for (const group of this.groups) {
+      const stored = this.storedOrderFor(group);
+      if (stored === null) {
+        continue;
+      }
+
+      const stillIn = (unitId: string): boolean => {
+        if (!group.unitIds.includes(unitId)) {
+          return false;
+        }
+        const unit = this.units.get(unitId);
+        return unit !== undefined && unit.aliveCount > 0 && !unit.hasActedThisRound;
+      };
+
+      const kept = stored.filter(stillIn);
+      // The group members the stored order never knew about (a unit that joined
+      // the group after the draw was resolved) go to the end by their slot.
+      const newcomers = group.unitIds.filter((unitId) => !stored.includes(unitId));
+
+      group.unitIds = [...kept, ...newcomers.sort((a, b) => this.slotOf(a) - this.slotOf(b))];
+    }
+  }
+
+  /** The ready order already decided for this group, or null if it is new. */
+  private storedOrderFor(group: TurnGroup): string[] | null {
+    for (const unitId of group.unitIds) {
+      const stored = this.resolvedOrders.get(unitId);
+      if (stored !== undefined) {
+        return stored;
+      }
+    }
+
+    return null;
+  }
+
+  /** The slot of a unit in its army (used to order the newcomers). */
+  private slotOf(unitId: string): number {
+    return this.units.get(unitId)?.slot ?? 0;
+  }
+
+  /**
+   * Points the queue at its first unit and writes it into the state.
+   *
+   * THE DRAW IS RESOLVED HERE, LAZILY: when the head of the queue is a group with
+   * units of both sides, that is the moment rule 3v is really needed — the
+   * priority side goes first and the priority passes to the other side, once for
+   * the whole group (rules 4b/4v).
+   */
+  private turnHeadToFirst(keepCurrent: string | null = null): BattleEvent[] {
+    const events: BattleEvent[] = [];
+    const head = this.groups[0];
+
+    if (head !== undefined && head.isCrossSide && this.storedOrderFor(head) === null) {
+      const from = this.state.turns.prioritySide;
+      const to: BattleSide = from === 'left' ? 'right' : 'left';
+
+      // Remember the ready order for every member of the group (rule 4g).
+      for (const unitId of head.unitIds) {
+        this.resolvedOrders.set(unitId, [...head.unitIds]);
+      }
+
+      this.state.turns.prioritySide = to;
+      events.push({
+        type: 'PriorityPassed',
+        round: this.state.round,
+        from,
+        to,
+        unitIds: [...head.unitIds],
+      });
+    }
+
+    const all = this.groups.flatMap((group) => group.unitIds);
+
+    // A recalculation with `keepCurrent` never starts a new turn and never writes
+    // a TurnStarted event — the unit that is already acting stays acting.
+    if (keepCurrent !== null && all.includes(keepCurrent)) {
+      this.state.turns.currentUnitId = keepCurrent;
+      this.state.turns.order = all.filter((unitId) => unitId !== keepCurrent);
+
+      return events;
+    }
+
+    this.state.turns.currentUnitId = all[0] ?? null;
+    this.state.turns.order = all.slice(1);
+
+    if (all[0] !== undefined) {
+      events.push({ type: 'TurnStarted', round: this.state.round, unitId: all[0] });
+    }
+
+    return events;
+  }
+
+  /**
+   * Ends the turn of the unit that acts now: it has acted, the queue is rebuilt
+   * from the new state, and when the round is over the next one starts by itself
+   * (the same reset nextRound() does).
+   */
+  private endCurrentTurn(): BattleEvent[] {
+    const current = this.units.get(this.state.turns.currentUnitId ?? '');
+
+    if (current !== undefined && current.aliveCount > 0) {
+      current.hasActedThisRound = true;
+    }
+
+    if (this.countPendingActors() === 0) {
+      return this.startNextRound();
+    }
+
+    this.rebuildQueue();
+
+    return this.turnHeadToFirst();
+  }
+
+  /** How many alive units have not acted yet this round. */
+  private countPendingActors(): number {
+    return this.state.units.filter((unit) => unit.aliveCount > 0 && !unit.hasActedThisRound)
+      .length;
+  }
+
+  /**
+   * Starts the next round: round + 1, retaliation counters back to full (shots
+   * are NOT restored), the draw memory of the round is dropped — the next round
+   * resolves its draws from scratch, while the priority KEEPS alternating.
+   */
+  private startNextRound(): BattleEvent[] {
+    this.state.round += 1;
+
+    for (const unit of this.state.units) {
+      unit.hasWaitedThisRound = false;
+      unit.hasActedThisRound = false;
+
+      if (unit.aliveCount <= 0) {
+        continue;
+      }
+      unit.retaliationsLeft = unit.unit.retaliationsPerRound ?? 1;
+    }
+
+    this.resolvedOrders.clear();
+    this.rebuildQueue();
+
+    return [{ type: 'RoundStarted', round: this.state.round }, ...this.turnHeadToFirst()];
+  }
+
+  /**
+   * The coin flip of rule 4a: it is ALWAYS thrown when the battle is created,
+   * even if no equal-speed draw ever happens.
+   */
+  private rollPriority(): BattleEvent {
+    const side: BattleSide = this.random() < 0.5 ? 'left' : 'right';
+
+    this.state.turns.prioritySide = side;
+
+    return { type: 'PriorityRolled', side };
+  }
+
+  /**
+   * The turn of `unitId` ends only when it really IS the current unit. With
+   * enforceTurns off the sandbox may hit with anybody, and such a hit must not
+   * move the queue (docs/tasks/001-turn-queue.md).
+   */
+  private finishTurnOf(unitId: string, events: BattleEvent[]): BattleEvent[] {
+    if (!this.enforceTurns && this.state.turns.currentUnitId !== unitId) {
+      return events;
+    }
+
+    return [...events, ...this.endCurrentTurn()];
+  }
+
+  /** Refuses an action of a unit that is not the one whose turn it is. */
+  private refuseOutOfTurn(unitId: string, action: string) {
+    const current = this.state.turns.currentUnitId;
+
+    return refuse(
+      'NOT_YOUR_TURN',
+      `${action} может сделать только тот, чей сейчас ход (сейчас ходит "${current ?? 'никто'}", команда от "${unitId}")`,
+    );
+  }
+
+  /**
+   * Opens the fight: throws the priority coin and builds the queue of round 1.
+   * Called once, by createBattle. The coin goes to the TOP of the log (it is the
+   * first thing that happened), the queue events to the end.
+   */
+  openQueue(): void {
+    this.state.log.unshift(this.rollPriority());
+
+    this.rebuildQueue();
+    this.finish(this.turnHeadToFirst());
   }
 
   /** Appends the events to the log and returns them. */
@@ -620,6 +981,11 @@ export function createBattle(
     turns: { order: [], currentUnitId: null, prioritySide: 'left' },
   };
   const battle = new Battle(state, units, { ...deps, combatRules }, setup.placementMode);
+
+  // The coin flip is the FIRST thing in the log (rules 4a/7), then the units that
+  // came with a cell, then the opening of the queue (a draw resolved at once and
+  // the first turn).
+  battle.openQueue();
 
   return { ok: true, battle };
 }

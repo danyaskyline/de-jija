@@ -138,7 +138,14 @@ describe('createBattle — the initial snapshot', () => {
 
     expect(state.round).toBe(1);
     expect(state.attacksStarted).toBe(false);
-    expect(state.log).toEqual([]);
+    // Nothing has happened yet: the log holds only the coin flip of the new battle
+    // and the opening of the queue — no placements, no hits. (Both units have the
+    // same speed and level, so the opening draw of rule 3v is resolved right away.)
+    expect(state.log.map((event) => event.type)).toEqual([
+      'PriorityRolled',
+      'PriorityPassed',
+      'TurnStarted',
+    ]);
 
     // poolHp = hp per unit * stackCount; shots and retaliations start full.
     expect(stateOf(battle, 'l1').aliveCount).toBe(3);
@@ -158,8 +165,11 @@ describe('createBattle — the initial snapshot', () => {
 
     expect(stateOf(battle, 'l1').hexes).toEqual([{ x: 1, y: 0 }]);
     expect(battle.getState().log.map((event) => event.type)).toEqual([
+      'PriorityRolled',
       'UnitPlaced',
       'UnitPlaced',
+      'PriorityPassed',
+      'TurnStarted',
     ]);
   });
 
@@ -241,7 +251,13 @@ describe('createBattle — the initial snapshot', () => {
     expect(fresh.units[0].aliveCount).toBe(1);
     expect(fresh.units[0].poolHp).toBe(60);
     expect(fresh.units[0].hexes).toEqual([]);
-    expect(fresh.log).toEqual([]);
+    // The caller changed a COPY of the log, so the battle still holds nothing
+    // but its own opening events in it.
+    expect(fresh.log.map((event) => event.type)).toEqual([
+      'PriorityRolled',
+      'PriorityPassed',
+      'TurnStarted',
+    ]);
   });
 
   it('a flat damage bonus in the setup changes the hit', () => {
@@ -494,7 +510,12 @@ describe('placeUnit', () => {
 
     expect(result.ok).toBe(true);
     expect(stateOf(battle, 'l1').hexes).toEqual([{ x: 3, y: 4 }]);
+    // The log opens the battle (coin, the draw of the two equal-speed units, the
+    // first turn) and then records this placement.
     expect(battle.getState().log).toEqual([
+      { type: 'PriorityRolled', side: 'left' },
+      { type: 'PriorityPassed', round: 1, from: 'left', to: 'right', unitIds: ['l1', 'r1'] },
+      { type: 'TurnStarted', round: 1, unitId: 'l1' },
       { type: 'UnitPlaced', unitId: 'l1', hex: { x: 3, y: 4 } },
     ]);
   });
@@ -638,10 +659,14 @@ describe('attack — the rules of the hit', () => {
     expect(result.ok).toBe(true);
     // Both units started on cells, so their placement is already in the log.
     expect(battle.getState().log.map((event) => event.type)).toEqual([
+      'PriorityRolled',
       'UnitPlaced',
       'UnitPlaced',
+      'PriorityPassed',
+      'TurnStarted',
       'AttackResolved',
       'RetaliationResolved',
+      'TurnStarted',
     ]);
   });
 
@@ -1023,7 +1048,7 @@ describe('nextRound', () => {
 
     const log = battle.getState().log;
 
-    expect(log[log.length - 1]).toEqual({ type: 'RoundStarted', round: 2 });
+    expect(log).toContainEqual({ type: 'RoundStarted', round: 2 });
   });
 
   it('a unit with 2 retaliations gets its own number back', () => {

@@ -148,7 +148,13 @@ describe('POST /debug/battles', () => {
     expect(body.state?.round).toBe(1);
     expect(body.state?.units).toHaveLength(2);
     // Both units came with a cell, so both placements are already in the log.
-    expect(body.events?.map((event) => event.type)).toEqual(['UnitPlaced', 'UnitPlaced']);
+    expect(body.events?.map((event) => event.type)).toEqual([
+      'PriorityRolled',
+      'UnitPlaced',
+      'UnitPlaced',
+      'PriorityPassed',
+      'TurnStarted',
+    ]);
   });
 
   it('a bad setup is a normal 200 answer with SETUP_INVALID, not an HTTP error', async () => {
@@ -264,7 +270,10 @@ describe('POST /debug/battles/:id/attack', () => {
 
     expect(status).toBe(200);
     expect(body.ok).toBe(true);
-    // A melee hit between neighbours: the hit and the retaliation.
+    // A melee hit between neighbours: the hit and the retaliation. The queue events
+    // are NOT asserted here: the sandbox may hit with any unit, and whether the
+    // turn moves on depends on whose turn it happened to be (the coin is real
+    // Math.random here). The queue itself is covered by the Battle tests.
     expect(body.events?.map((event) => event.type)).toEqual([
       'AttackResolved',
       'RetaliationResolved',

@@ -1564,7 +1564,24 @@
             event.damage + ', у защитника ' + event.defenderAliveAfter + ' юнитов'
           );
         }
+        // The turn queue (docs/battle.md, "Очередь ходов"). The page only SHOWS
+        // what the server decided — it calculates nothing here either.
+        if (event.type === 'PriorityRolled') {
+          return 'Монетка приоритета: сторона "' + (event.side === 'left' ? 'левая' : 'правая') + '"';
+        }
+        if (event.type === 'PriorityPassed') {
+          return (
+            'Приоритет: "' + (event.from === 'left' ? 'левая' : 'правая') + '" -> "' +
+            (event.to === 'left' ? 'левая' : 'правая') + '" (ничья: ' +
+            event.unitIds.join(', ') + ')'
+          );
+        }
+        if (event.type === 'UnitWaited') return event.unitId + ' ждёт (раунд ' + event.round + ')';
+        if (event.type === 'TurnStarted') {
+          return 'Ходит ' + event.unitId + ' (раунд ' + event.round + ')';
+        }
 
+        // An event this page does not know yet: show its type, never crash.
         return event.type;
       }
 

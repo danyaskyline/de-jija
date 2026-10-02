@@ -157,3 +157,56 @@ describe('страница /debug/battle-sandbox загружается', () => 
     window.close();
   }, 20000);
 });
+
+describe('журнал страницы показывает новые события очереди ходов', () => {
+  it('рисует PriorityRolled / PriorityPassed / UnitWaited / TurnStarted и не падает', async () => {
+    const { window, errors } = openPage();
+
+    await waitForInit(window);
+
+    const document = window.document;
+
+    expect(
+      document.getElementById('status')?.textContent ?? '',
+      `страница не загрузилась: ${document.getElementById('status')?.textContent ?? ''}`,
+    ).not.toContain(LOAD_FAILURE_TEXT);
+
+    const renderOne = (event: Record<string, unknown>): string => {
+      const line = document.createElement('div');
+
+      // The very function of the page that turns an event into a line.
+      const source = (window as unknown as { logLineFor?: (event: unknown) => string }).logLineFor;
+
+      if (typeof source === 'function') {
+        line.textContent = source(event);
+      } else {
+        // The page keeps its functions inside a script scope; if a future edit
+        // makes them private, we still check that no error was thrown.
+        line.textContent = String(event.type);
+      }
+
+      return line.textContent ?? '';
+    };
+
+    expect(renderOne({ type: 'PriorityRolled', side: 'left' })).toContain('левая');
+    expect(renderOne({ type: 'PriorityRolled', side: 'right' })).toContain('правая');
+    expect(
+      renderOne({
+        type: 'PriorityPassed',
+        round: 1,
+        from: 'left',
+        to: 'right',
+        unitIds: ['a1', 'b1'],
+      }),
+    ).toContain('a1, b1');
+    expect(renderOne({ type: 'UnitWaited', unitId: 'a1', round: 2 })).toContain('a1');
+    expect(renderOne({ type: 'TurnStarted', round: 2, unitId: 'b1' })).toContain('b1');
+
+    // An event type this page does not know: it must show the type, not crash.
+    expect(renderOne({ type: 'SomethingNewInTheFuture' })).toBe('SomethingNewInTheFuture');
+
+    expect(errors, 'ошибки при отрисовке событий очереди').toEqual([]);
+
+    window.close();
+  }, 20000);
+});
