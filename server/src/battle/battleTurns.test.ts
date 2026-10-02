@@ -1007,3 +1007,492 @@ describe('the queue lives in the state, so the interface only asks', () => {
     }
   });
 });
+describe('002/2 — a newcomer in an already decided group', () => {
+  /** All PriorityPassed events of the battle, in order. */
+  function passes(battle: Battle) {
+    return battle.getState().log.filter((event) => event.type === 'PriorityPassed');
+  }
+
+  it('T1 (a) nobody of the group has acted: the whole group is rebuilt by rule 1', () => {
+    // Left A1 (17, t1), A3 (17, t1), A2 (11, t3); right B1 (17, t1). Equal top
+    // speeds, the coin gives the priority to the left.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17) },
+          { id: 'a3', unit: fighter(17) },
+          { id: 'a2', unit: fighter(11, { tier: 3 }) },
+        ],
+        [{ id: 'b1', unit: fighter(17) }],
+      ),
+      { coin: 0.1, enforceTurns: true },
+    );
+
+    // The group of 17 is decided from the left: the left side by slot (a1, a3),
+    // the sides alternate -> [a1, b1, a3].
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['b1', 'a3', 'a2']);
+    expect(passes(battle)).toHaveLength(1);
+
+    // The hero of A hastes A2 (his own unit) during A1's turn — reachable in play.
+    battle.setUnitSpeed('a2', 17);
+
+    // Nobody of the group has acted, so rule 2(a) rebuilds the WHOLE group by rule 1
+    // from the saved firstSide = left: inside the left side the level decides (A2,
+    // tier 3, first), then the slot (a1, a3), and the sides alternate from the
+    // priority side -> [a2, b1, a1, a3]. A1 keeps its turn, so the remainder is
+    // [a2, b1, a3].
+    //
+    // Keeping the saved SIDE PATTERN instead (rule 2(b)) would leave [b1, a3] and
+    // put the newcomer A2 after them -> [b1, a2, a3], which is a different order.
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['a2', 'b1', 'a3']);
+    // The priority is NOT spent a second time.
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(passes(battle)).toHaveLength(1);
+  });
+
+  it('T2 (b) somebody of the group has acted: the newcomer takes a place in its own side', () => {
+    // Left A1, A2 (17, t1); right B1, B2 (17, t1) and B3 (5, t3).
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17) },
+          { id: 'a2', unit: fighter(17) },
+        ],
+        [
+          { id: 'b1', unit: fighter(17) },
+          { id: 'b2', unit: fighter(17) },
+          { id: 'b3', unit: fighter(5, { tier: 3 }) },
+        ],
+      ),
+      { coin: 0.1, enforceTurns: true },
+    );
+
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['b1', 'a2', 'b2', 'b3']);
+    expect(passes(battle)).toHaveLength(1);
+
+    // A1 acts and is done for this round.
+    battle.endTurn();
+
+    expect(turnsOf(battle).current).toBe('b1');
+    expect(turnsOf(battle).next).toEqual(['a2', 'b2', 'b3']);
+
+    // The hero of B hastes B3 (his own unit) during B1's turn — reachable in play.
+    battle.setUnitSpeed('b3', 17);
+
+    // A1 has already acted, so this is rule 2(b): the SIDE PATTERN of the
+    // remainder is kept. Without the current unit B1 the saved order leaves
+    // [a2, b2] = left, right; B3 adds a place at the END of its own side's places
+    // -> left, right, right. The right side is then filled by level and slot, so
+    // B3 (tier 3) comes before B2 — but B3 does NOT overtake A2, a unit of the
+    // other side. A naive "newcomer to the very end" would give [a2, b2, b3].
+    expect(turnsOf(battle).current).toBe('b1');
+    expect(turnsOf(battle).next).toEqual(['a2', 'b3', 'b2']);
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(passes(battle)).toHaveLength(1);
+  });
+it('T3 (c) nobody new: the saved order minus the units that left', () => {
+    // Left A1, A2 (hp 1), A3 (17, t1); right B1 (damage 200), B2 (17, t1).
+    // Hexes: a2 and b1 are neighbours, so B1's hit is melee and kills A2 outright
+    // (a destroyed stack cannot retaliate).
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17), hex: { x: 2, y: 3 } },
+          {
+            id: 'a2',
+            unit: fighter(17, {
+              stats: { hp: 1, attack: 10, defense: 0, speed: 17, damageMin: 5, damageMax: 5 },
+            }),
+            hex: { x: 2, y: 4 },
+          },
+          { id: 'a3', unit: fighter(17), hex: { x: 2, y: 5 } },
+        ],
+        [
+          {
+            id: 'b1',
+            unit: fighter(17, {
+              stats: { hp: 100, attack: 10, defense: 5, speed: 17, damageMin: 200, damageMax: 200 },
+            }),
+            hex: { x: 3, y: 4 },
+          },
+          { id: 'b2', unit: fighter(17), hex: { x: 4, y: 3 } },
+        ],
+      ),
+      { coin: 0.1, enforceTurns: true },
+    );
+
+    // One group of five: the sides alternate from the priority side (left).
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['b1', 'a2', 'b2', 'a3']);
+    expect(passes(battle)).toHaveLength(1);
+
+    // A1 acts. There is NO newcomer here: A3 was in this group from the start, so
+    // this is rule 2(c) — the saved order minus the departed A1.
+    battle.endTurn();
+
+    expect(turnsOf(battle).current).toBe('b1');
+    expect(turnsOf(battle).next).toEqual(['a2', 'b2', 'a3']);
+
+    // B1 (the current unit) kills A2 with a melee hit; its turn ends with the hit.
+    const hit = battle.attack('b1', 'a2', { fixedDamageRoll: 0, fixedLuckRoll: 0 });
+
+    expect(hit.ok).toBe(true);
+    expect(battle.getState().units.find((unit) => unit.id === 'a2')?.aliveCount).toBe(0);
+
+    // A2 is gone and nobody joined, so the group {A3, B2} keeps the decided order
+    // without it. The draw is NOT resolved again — that is what rule 2(c)
+    // protects, and without it the priority would pass a second time here.
+    expect(turnsOf(battle).current).toBe('b2');
+    expect(turnsOf(battle).next).toEqual(['a3']);
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(passes(battle)).toHaveLength(1);
+  });
+it('T4 the priority is not taken when the current unit does not have it', () => {
+    // Left A1, A2 (17, t1); right B1 (5, t1). Different top speeds, so the
+    // priority comes from the SPEED: B1 acts second and therefore has it.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17) },
+          { id: 'a2', unit: fighter(17) },
+        ],
+        [{ id: 'b1', unit: fighter(5) }],
+      ),
+      { enforceTurns: true },
+    );
+
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(passes(battle)).toHaveLength(0);
+    expect(turnsOf(battle).current).toBe('a1');
+
+    battle.endTurn();
+
+    expect(turnsOf(battle).current).toBe('a2');
+
+    // Моделирует эффект напрямую через setUnitSpeed: in play an enemy unit cannot
+    // speed up while the other side acts, so this is a protection test.
+    battle.setUnitSpeed('b1', 17);
+
+    // {A2 (current), B1} is a cross-side group for the first time, but the current
+    // unit is on the LEFT and the priority is on the RIGHT: the priority side does
+    // not really go first, so nothing is spent and no PriorityPassed is written.
+    expect(turnsOf(battle).current).toBe('a2');
+    expect(turnsOf(battle).next).toEqual(['b1']);
+    expect(battle.getState().turns.prioritySide).toBe('right');
+    expect(passes(battle)).toHaveLength(0);
+  });
+
+  it('T5 no unit appears twice in the PriorityPassed log', () => {
+    // Left A1, A2 (17); right B0 (20), B1 (5). The right side is faster, so the
+    // priority comes from the speed and sits on the left.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(17) },
+          { id: 'a2', unit: fighter(17) },
+        ],
+        [
+          { id: 'b0', unit: fighter(20) },
+          { id: 'b1', unit: fighter(5) },
+        ],
+      ),
+      { enforceTurns: true },
+    );
+
+    expect(battle.getState().turns.prioritySide).toBe('left');
+    expect(turnsOf(battle).current).toBe('b0');
+
+    battle.endTurn();
+
+    expect(turnsOf(battle).current).toBe('a1');
+
+    // Моделирует эффект напрямую через setUnitSpeed.
+    battle.setUnitSpeed('b1', 17);
+
+    // {A1 (current), A2, B1}: the current unit is on the priority side, so the
+    // draw really costs the priority. Before the duplicate fix the current unit
+    // was pushed twice and the log read ['a1', 'b1', 'a2', 'a2'].
+    expect(passes(battle)).toHaveLength(1);
+    expect(passes(battle)[0]).toEqual({
+      type: 'PriorityPassed',
+      round: 1,
+      from: 'left',
+      to: 'right',
+      unitIds: ['a1', 'b1', 'a2'],
+    });
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['b1', 'a2']);
+    expect(battle.getState().turns.prioritySide).toBe('right');
+  });
+it('T7 a slowed unit does not make an unresolved group look resolved', () => {
+    // Left A1, A2 (11), A4 (5); right B1, B2 (11), B4 (5). Slots are the index in
+    // the side's array: a1=0, a2=1, a4=2, b1=0, b2=1, b4=2.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(11) },
+          { id: 'a2', unit: fighter(11) },
+          { id: 'a4', unit: fighter(5) },
+        ],
+        [
+          { id: 'b1', unit: fighter(11) },
+          { id: 'b2', unit: fighter(11) },
+          { id: 'b4', unit: fighter(5) },
+        ],
+      ),
+      { coin: 0.1, enforceTurns: true },
+    );
+
+    // The group of 11 is a real draw and is decided; the group of 5 is not reached.
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(turnsOf(battle).next).toEqual(['b1', 'a2', 'b2', 'a4', 'b4']);
+    expect(passes(battle)).toHaveLength(1);
+
+    // The hero of A SLOWS the enemy B2 — reachable in play: a hero slows the
+    // enemy during his own side's turn.
+    battle.setUnitSpeed('b2', 5);
+
+    // B2 left the decided group of 11 and joined the group of 5, which has never
+    // been decided. Nothing new is resolved here, because that group is not the
+    // head: A1 keeps its turn and the priority is untouched.
+    expect(turnsOf(battle).current).toBe('a1');
+    expect(passes(battle)).toHaveLength(1);
+    expect(battle.getState().turns.prioritySide).toBe('right');
+
+    // Play the round until the group of 5 becomes the head of the queue.
+    battle.endTurn();
+    battle.endTurn();
+    battle.endTurn();
+
+    // Now {a4, b4, b2} is a cross-side group that was NEVER decided: the record of
+    // the group of 11 must not make it look resolved (B2 left it and its speed
+    // changed). The priority is right, so the draw is ordered from the right:
+    // b2 (slot 1) before b4 (slot 2), alternating -> [b2, a4, b4].
+    expect(turnsOf(battle).current).toBe('b2');
+    expect(passes(battle)).toHaveLength(2);
+    expect(passes(battle)[1]).toEqual({
+      type: 'PriorityPassed',
+      round: 1,
+      from: 'right',
+      to: 'left',
+      unitIds: ['b2', 'a4', 'b4'],
+    });
+    expect(battle.getState().turns.prioritySide).toBe('left');
+  });
+
+  it('a new round ignores the unit that acted last round when it decides a draw', () => {
+    // Four units of the same speed, two on each side. The unit that acted LAST in
+    // round 1 must not decide anything in round 2: the state still names it as the
+    // current one, but it is free to act again.
+    const battle = makeBattle(
+      setupOf(
+        [
+          { id: 'a1', unit: fighter(11) },
+          { id: 'a2', unit: fighter(11) },
+        ],
+        [
+          { id: 'b1', unit: fighter(11) },
+          { id: 'b2', unit: fighter(11) },
+        ],
+      ),
+      { coin: 0.1, enforceTurns: true },
+    );
+
+    // Round 1: one group, one draw, the priority passes once.
+    expect(passes(battle)).toHaveLength(1);
+    expect(battle.getState().turns.prioritySide).toBe('right');
+
+    for (let i = 0; i < 4; i += 1) {
+      battle.endTurn();
+    }
+
+    expect(battle.getState().round).toBe(2);
+
+    // Round 2 decides its own draw: exactly one more PriorityPassed, and the
+    // priority alternates to the left. Round 2 starts with the priority on the
+    // RIGHT, so the group is ordered from the right: b1, a1, b2, a2.
+    expect(passes(battle)).toHaveLength(2);
+    expect(passes(battle)[1]).toEqual({
+      type: 'PriorityPassed',
+      round: 2,
+      from: 'right',
+      to: 'left',
+      unitIds: ['b1', 'a1', 'b2', 'a2'],
+    });
+    expect(battle.getState().turns.prioritySide).toBe('left');
+    expect(turnsOf(battle).current).toBe('b1');
+  });
+});
+/** A tiny deterministic PRNG, so a failing fuzz seed can be repeated exactly. */
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+describe('002/2 — the invariants hold under random play', () => {
+  it('T6 200 random battles: the queue and the priority chain stay sane', () => {
+    const SPEEDS = [5, 11, 17];
+
+    function playBattle(seed: number): void {
+      const next = mulberry32(seed);
+      const pick = <T,>(values: T[]): T => values[Math.floor(next() * values.length)];
+
+      // Small armies: up to three units a side, all placed on one column each so
+      // a hit is always available between neighbours.
+      const side = (prefix: string, column: number) =>
+        Array.from({ length: 1 + Math.floor(next() * 3) }, (_item, index) => {
+          const speed = pick(SPEEDS);
+
+          return {
+            id: `${prefix}${index}`,
+            unit: fighter(speed, {
+              tier: 1 + Math.floor(next() * 3),
+              stats: { hp: 30, attack: 8, defense: 2, speed, damageMin: 9, damageMax: 9 },
+            }),
+            hex: { x: column, y: index },
+          };
+        });
+
+      const left = side('a', 3);
+      const right = side('b', 6);
+      const coin = next();
+
+      // Built here rather than through makeBattle: the coin is only READ when the
+      // top speeds are equal, and a random army often is not, so passing a coin to
+      // makeBattle would be exactly the "coin passed but never read" mistake that
+      // helper refuses.
+      const created = createBattle(
+        setupOf(
+          left.map((entry) => ({ id: entry.id, unit: entry.unit, hex: entry.hex })),
+          right.map((entry) => ({ id: entry.id, unit: entry.unit, hex: entry.hex })),
+        ),
+        {
+          combatRules: getCombatRules(),
+          skillsData: skills,
+          battleRules: BATTLE_RULES,
+          random: () => coin,
+          enforceTurns: true,
+        },
+      );
+
+      if (!created.ok) {
+        throw new Error(`seed ${seed}: createBattle refused: ${created.code} ${created.message}`);
+      }
+
+      const battle = created.battle;
+
+      /** All PriorityPassed events so far. */
+      const passes = () =>
+        battle.getState().log.filter((event) => event.type === 'PriorityPassed');
+
+      const check = (step: string) => {
+        const state = battle.getState();
+        const current = state.turns.currentUnitId;
+        const queue = current === null ? [] : [current, ...state.turns.order];
+
+        // (a) every alive unit that has not acted is in the queue exactly once,
+        // and nothing else is.
+        const expected = state.units
+          .filter((unit) => unit.aliveCount > 0 && !unit.hasActedThisRound)
+          .map((unit) => unit.id)
+          .sort();
+
+        expect(
+          new Set(queue).size,
+          `seed ${seed}, ${step}: duplicates in the queue`,
+        ).toBe(queue.length);
+        expect([...queue].sort(), `seed ${seed}, ${step}: wrong queue`).toEqual(expected);
+
+        // (в) the PriorityPassed chain: every `from` is the previous `to`, the
+        // first `from` is the side of the coin, and prioritySide is the last `to`.
+        const rolled = state.log.find((event) => event.type === 'PriorityRolled');
+
+        expect(rolled, `seed ${seed}, ${step}: no PriorityRolled`).toBeDefined();
+        let expectedSide = (rolled as { side: string }).side;
+
+        for (const event of passes()) {
+          if (event.type !== 'PriorityPassed') {
+            continue;
+          }
+          expect(event.from, `seed ${seed}, ${step}: broken chain`).toBe(expectedSide);
+          // (г) no unit twice in one decision
+          expect(
+            new Set(event.unitIds).size,
+            `seed ${seed}, ${step}: duplicates in PriorityPassed`,
+          ).toBe(event.unitIds.length);
+          expectedSide = event.to;
+        }
+
+        expect(
+          state.turns.prioritySide,
+          `seed ${seed}, ${step}: priority out of sync`,
+        ).toBe(expectedSide);
+      };
+
+      check('start');
+
+      for (let step = 0; step < 30; step += 1) {
+        const before = battle.getState().turns.currentUnitId;
+        if (before === null) {
+          break;
+        }
+
+        const action = Math.floor(next() * 4);
+
+        if (action === 0) {
+          battle.endTurn();
+        } else if (action === 1) {
+          battle.wait(before);
+        } else if (action === 2) {
+          // Any unit, at any of the three speeds. In play a hero would only haste
+          // its own and slow the enemy — setUnitSpeed is universal, and the fuzz
+          // needs both.
+          const everyone = [...left, ...right];
+          const target = pick(everyone).id;
+
+          battle.setUnitSpeed(target, pick(SPEEDS));
+
+          // (б) a speed change of anybody else must not steal the current turn.
+          if (target !== before) {
+            expect(
+              battle.getState().turns.currentUnitId,
+              `seed ${seed}, step ${step}: the current unit changed`,
+            ).toBe(before);
+          }
+        } else {
+          // Hit a neighbour on the other side: same row, adjacent column.
+          const attackerRow = battle.getState().units.find((u) => u.id === before)?.hexes[0]?.y;
+          const foes = [...left, ...right].filter(
+            (entry) =>
+              entry.id !== before &&
+              entry.hex.y === attackerRow &&
+              (entry.id.startsWith('a') === !before.startsWith('a')),
+          );
+
+          if (foes.length > 0) {
+            battle.attack(before, foes[0].id, { fixedDamageRoll: 0, fixedLuckRoll: 0 });
+          } else {
+            battle.endTurn();
+          }
+        }
+
+        check(`step ${step}`);
+      }
+    }
+
+    for (let seed = 1; seed <= 200; seed += 1) {
+      playBattle(seed);
+    }
+  }, 60000);
+});

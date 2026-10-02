@@ -44,7 +44,14 @@ import { aggregateHeroModifiers } from '../combat/heroModifiers';
 import { resolveAttack } from '../combat/resolveAttack';
 import type { SkillsData } from '../combat/skills';
 import type { BattleRules } from './battleRules';
-import { buildTurnOrder, decideInitialPriority, type TurnGroup, type TurnQueueUnit } from './turnQueue';
+import {
+  buildTurnOrder,
+  compareWithinSide,
+  decideInitialPriority,
+  orderEqualSpeedGroup,
+  type TurnGroup,
+  type TurnQueueUnit,
+} from './turnQueue';
 
 /** Everything Battle needs from the outside; injected so tests are deterministic. */
 export type BattleDeps = {
@@ -74,6 +81,31 @@ function refuse(code: BattleErrorCode, message: string) {
  * The battle instance. Created by createBattle() and then driven purely by
  * commands (placeUnit / attack / nextRound / getState / getValidTargets).
  */
+/**
+ * A group of equal speed whose draw was already decided in this round
+ * (002/2, and the protection 4g of task 001).
+ *
+ * The record belongs to the GROUP, not to a unit — that is what makes it robust:
+ * a unit may leave the group (death, a speed change) and a newcomer may join it,
+ * and the record still says exactly what this group was decided as.
+ */
+type ResolvedGroup = {
+  /** The full membership at the moment the draw was decided. */
+  memberIds: string[];
+  /** The ready order that was decided. */
+  order: string[];
+  /** The side that had the priority BEFORE the switch (002/4g firstSide). */
+  firstSide: BattleSide;
+  /** The speed of the group — a unit only counts as its member at this speed. */
+  speed: number;
+  /** The segment of the round the group belongs to. */
+  segment: 'normal' | 'waiting';
+};
+
+/**
+ * The battle instance. Created by createBattle() and then driven purely by
+ * commands (placeUnit / attack / nextRound / getState / getValidTargets).
+ */
 export class Battle {
   private readonly state: BattleState;
 
@@ -89,13 +121,11 @@ export class Battle {
   private readonly enforceTurns: boolean;
 
   /**
-   * Rule 4g memory: for every unit of an ALREADY RESOLVED equal-speed group, the
-   * ready order of that group. When the queue is recalculated inside a round (a
-   * haste-like speed change, a death), a group that still contains such a unit
-   * inherits that order and the priority is NOT spent a second time. Cleared when
-   * a new round starts — the next round resolves its draws from scratch.
-   */
-  private readonly resolvedOrders = new Map<string, string[]>();
+ * The draws already decided in the CURRENT round. Cleared when a new round
+ * starts — the next round resolves its draws from scratch, while the priority
+ * keeps alternating (001/4б).
+ */
+  private readonly resolvedGroups: ResolvedGroup[] = [];
 
   /** The groups of the current order, kept so the head can be resolved lazily. */
   private groups: TurnGroup[] = [];
@@ -537,7 +567,15 @@ export class Battle {
     }
 
     for (const unit of this.state.units) {
+      // The unit that keeps its turn was already pushed above: pushing it twice
+      // would duplicate it in the order and in the PriorityPassed log.
       if (unit.aliveCount <= 0 || unit.hasActedThisRound) {
+        continue;
+      }
+
+      // The unit that keeps its turn was already pushed above: pushing it twice
+      // would duplicate it in the order and in the PriorityPassed log.
+      if (unit.id === keepCurrent) {
         continue;
       }
 
@@ -557,22 +595,34 @@ export class Battle {
     // The groups are only BUILT here; the head (and the draw in it, if any) is
     // resolved by turnHeadToFirst(), which also reports the events.
     this.groups = order.groups;
-    this.applyResolvedOrders();
+    this.applyResolvedOrders(keepCurrent);
   }
 
   /**
-   * Rule 4g: a group that contains a unit of an ALREADY RESOLVED group keeps the
-   * order that group already got. The stored list is filtered, so units that
-   * died, already acted or left the group (their speed changed) fall out, and a
-   * newcomer joins at the end by its slot. The priority is not spent again.
+   * RULE 2 (002/2) - a unit that became equal in speed to a group which was already
+   * decided in this round.
+   *
+   * Three cases, and the first two only fire when there really is a newcomer:
+   *   (a) nobody of the group has acted yet (the current unit may be inside):
+   *       rebuild the WHOLE group by rule 1 with the saved firstSide. The current
+   *       unit keeps its turn, the priority is NOT spent.
+   *   (b) somebody of the group has already acted: keep the SIDE PATTERN of the
+   *       remaining part, and give the newcomer a place at the END of its own side's
+   *       places. So a newcomer overtakes only units of its OWN side.
+   *   (c) there is no newcomer (a unit left: death or a speed change): the saved
+   *       order minus the departed units, as before.
+   *
+   * "Has somebody acted?" can only be answered from the SAVED order: a unit that has
+   * acted is not in the queue at all, so asking the fresh group would always say no.
    */
-  private applyResolvedOrders(): void {
+  private applyResolvedOrders(keepCurrent: string | null = null): void {
     for (const group of this.groups) {
-      const stored = this.storedOrderFor(group);
+      const stored = this.storedFor(group);
       if (stored === null) {
         continue;
       }
 
+      // Only units that are still here and still belong to this group.
       const stillIn = (unitId: string): boolean => {
         if (!group.unitIds.includes(unitId)) {
           return false;
@@ -581,25 +631,140 @@ export class Battle {
         return unit !== undefined && unit.aliveCount > 0 && !unit.hasActedThisRound;
       };
 
-      const kept = stored.filter(stillIn);
-      // The group members the stored order never knew about (a unit that joined
-      // the group after the draw was resolved) go to the end by their slot.
-      const newcomers = group.unitIds.filter((unitId) => !stored.includes(unitId));
+      const newcomers = group.unitIds.filter((unitId) => !stored.order.includes(unitId));
 
-      group.unitIds = [...kept, ...newcomers.sort((a, b) => this.slotOf(a) - this.slotOf(b))];
+      if (newcomers.length === 0) {
+        // (c) Nobody new: the saved order minus the departed units.
+        group.unitIds = stored.order.filter(stillIn);
+        continue;
+      }
+
+      const somebodyActed = stored.order.some(
+        (unitId) => this.units.get(unitId)?.hasActedThisRound === true,
+      );
+
+      if (!somebodyActed) {
+        // (a) Rebuild the whole group by rule 1, from the side it started with.
+        group.unitIds = orderEqualSpeedGroup(
+          group.unitIds.map((unitId) => this.queueUnitOf(unitId)),
+          stored.firstSide,
+        );
+        stored.order = [...group.unitIds];
+        continue;
+      }
+
+      // (b) Keep the side pattern and slot the newcomer into its own side's places.
+      group.unitIds = this.patternWithNewcomers(stored, group, keepCurrent, stillIn, newcomers);
     }
   }
 
-  /** The ready order already decided for this group, or null if it is new. */
-  private storedOrderFor(group: TurnGroup): string[] | null {
-    for (const unitId of group.unitIds) {
-      const stored = this.resolvedOrders.get(unitId);
-      if (stored !== undefined) {
-        return stored;
-      }
+  /**
+ * (b) The side pattern is kept: the newcomer takes a place at the end of its own
+ * side's places, and every side is refilled by level and then by slot.
+ */
+  private patternWithNewcomers(
+    stored: ResolvedGroup,
+    group: TurnGroup,
+    keepCurrent: string | null,
+    stillIn: (unitId: string) => boolean,
+    newcomers: string[],
+  ): string[] {
+    // The pattern: the saved order without the departed units and without the
+    // current unit (it keeps its turn and is not part of the remainder).
+    const currentId = this.currentUnitIn(group, keepCurrent);
+    const pattern = stored.order
+      .filter((unitId) => stillIn(unitId) && unitId !== currentId)
+      .map((unitId) => this.sideOf(unitId));
+
+    // A newcomer adds one place at the END of its own side's places.
+    for (const unitId of newcomers) {
+      const side = this.sideOf(unitId);
+      let lastPlaceOfSide = -1;
+
+      pattern.forEach((patternSide, index) => {
+        if (patternSide === side) {
+          lastPlaceOfSide = index;
+        }
+      });
+
+      pattern.splice(lastPlaceOfSide + 1, 0, side);
     }
 
-    return null;
+    // Fill every place with the units of that side, by level and then by slot.
+    const placesBySide: Record<BattleSide, string[]> = { left: [], right: [] };
+
+    for (const unitId of group.unitIds) {
+      if (unitId === currentId) {
+        continue;
+      }
+      placesBySide[this.sideOf(unitId)].push(unitId);
+    }
+
+    for (const side of ['left', 'right'] as const) {
+      placesBySide[side].sort((a, b) => this.compareWithinSideOf(a, b));
+    }
+
+    return pattern.map((side) => placesBySide[side].shift() as string);
+  }
+
+  /**
+   * The unit of this group whose turn it is - only ever `keepCurrent`, the unit the
+   * caller is really recalculating for.
+   *
+   * It is NOT read from the state on purpose: the state only learns who acts when
+   * the head is set, so at the start of a new round it still names the unit that
+   * acted last round - alive and free to act again, which must decide nothing.
+   */
+  private currentUnitIn(group: TurnGroup, keepCurrent: string | null): string | null {
+    return keepCurrent !== null && group.unitIds.includes(keepCurrent) ? keepCurrent : null;
+  }
+
+  /** The queue view of a battle unit, for the pure ordering function. */
+  private queueUnitOf(unitId: string): TurnQueueUnit {
+    const unit = this.units.get(unitId) as BattleUnit;
+
+    return {
+      id: unit.id,
+      side: unit.side,
+      slot: unit.slot,
+      currentSpeed: unit.currentSpeed,
+      tier: unit.unit.tier,
+      upgraded: unit.unit.upgraded,
+      hasWaitedThisRound: unit.hasWaitedThisRound,
+    };
+  }
+
+  /** The side of a unit, 'left' when the unit is somehow unknown. */
+  private sideOf(unitId: string): BattleSide {
+    return this.units.get(unitId)?.side ?? 'left';
+  }
+
+  /** Compares two units INSIDE one side: level, then slot (002/1(а)). */
+  private compareWithinSideOf(a: string, b: string): number {
+    return compareWithinSide(this.queueUnitOf(a), this.queueUnitOf(b));
+  }
+
+  /**
+   * The record that applies to this group, or null when the group was never
+   * decided in this round.
+   *
+   * A record only counts if one of its members is REALLY still in this group at the
+   * record's speed — a unit that slowed down or sped up is no longer a member of
+   * that group, and must not make the record look applicable to another one.
+   */
+  private storedFor(group: TurnGroup): ResolvedGroup | null {
+    return (
+      this.resolvedGroups.find(
+        (record) =>
+          record.segment === group.segment &&
+          record.speed === group.speed &&
+          record.memberIds.some(
+            (unitId) =>
+              group.unitIds.includes(unitId) &&
+              this.units.get(unitId)?.currentSpeed === record.speed,
+          ),
+      ) ?? null
+    );
   }
 
   /** The slot of a unit in its army (used to order the newcomers). */
@@ -610,43 +775,75 @@ export class Battle {
   /**
    * Points the queue at its first unit and writes it into the state.
    *
-   * THE DRAW IS RESOLVED HERE, LAZILY: when the head of the queue is a group with
-   * units of both sides, that is the moment rule 3v is really needed — the
-   * priority side goes first and the priority passes to the other side, once for
-   * the whole group (rules 4b/4v).
+   * THE DRAW IS RESOLVED HERE, LAZILY (002/2, 001/4б): when the queue reaches a
+   * group with units of both sides, that is the moment the priority is really
+   * needed.
+   *
+   * Two details that matter:
+   *  - the group is the one AROUND THE CURRENT UNIT, not blindly groups[0]: if
+   *    somebody is faster than the unit that acts, groups[0] is another group;
+   *  - the priority passes ONLY when the side that HAS the priority really acts
+   *    first in this draw. If the current unit belongs to the other side, the
+   *    priority is left alone (no PriorityPassed) and the group is remembered
+   *    anyway, with firstSide = the side that had the priority.
    */
   private turnHeadToFirst(keepCurrent: string | null = null): BattleEvent[] {
     const events: BattleEvent[] = [];
-    const head = this.groups[0];
+    const currentId = this.currentUnitIn(this.groups[0] ?? EMPTY_GROUP, keepCurrent);
+    const head =
+      currentId === null
+        ? this.groups[0]
+        : (this.groups.find((group) => group.unitIds.includes(currentId)) ?? this.groups[0]);
 
-    if (head !== undefined && head.isCrossSide && this.storedOrderFor(head) === null) {
+    if (head !== undefined && head.isCrossSide && this.storedFor(head) === null) {
       const from = this.state.turns.prioritySide;
       const to: BattleSide = from === 'left' ? 'right' : 'left';
 
-      // Remember the ready order for every member of the group (rule 4g).
-      for (const unitId of head.unitIds) {
-        this.resolvedOrders.set(unitId, [...head.unitIds]);
-      }
-
-      this.state.turns.prioritySide = to;
-      events.push({
-        type: 'PriorityPassed',
-        round: this.state.round,
-        from,
-        to,
-        unitIds: [...head.unitIds],
+      // The group is remembered either way (002/2): firstSide is the side that had
+      // the priority, so a later rebuild of this group starts from the same side.
+      this.resolvedGroups.push({
+        memberIds: [...head.unitIds],
+        order: [...head.unitIds],
+        firstSide: from,
+        speed: head.speed,
+        segment: head.segment,
       });
+
+      // Who really acts first in this draw: the current unit if it is in the
+      // group (it keeps its turn), otherwise the head of the ready order.
+      const reallyFirst = this.currentUnitIn(head, keepCurrent) ?? head.unitIds[0];
+
+      if (this.sideOf(reallyFirst) !== from) {
+        // The priority side does NOT go first, so nothing is spent: the priority
+        // stays and will pass at the next draw where it really goes first.
+        this.state.turns.currentUnitId = reallyFirst;
+      } else {
+        this.state.turns.prioritySide = to;
+        events.push({
+          type: 'PriorityPassed',
+          round: this.state.round,
+          from,
+          to,
+          unitIds: [...head.unitIds],
+        });
+      }
     }
 
     const all = this.groups.flatMap((group) => group.unitIds);
 
     // A recalculation with `keepCurrent` never starts a new turn and never writes
-    // a TurnStarted event — the unit that is already acting stays acting.
-    if (keepCurrent !== null && all.includes(keepCurrent)) {
-      this.state.turns.currentUnitId = keepCurrent;
-      this.state.turns.order = all.filter((unitId) => unitId !== keepCurrent);
+    // a TurnStarted event — the unit that is already acting stays acting, even when
+    // rule 2(b) rebuilt the group without it (it holds its turn, not a place in the
+    // remainder).
+    if (keepCurrent !== null) {
+      const unit = this.units.get(keepCurrent);
 
-      return events;
+      if (unit !== undefined && unit.aliveCount > 0 && !unit.hasActedThisRound) {
+        this.state.turns.currentUnitId = keepCurrent;
+        this.state.turns.order = all.filter((unitId) => unitId !== keepCurrent);
+
+        return events;
+      }
     }
 
     this.state.turns.currentUnitId = all[0] ?? null;
@@ -704,7 +901,7 @@ export class Battle {
       unit.retaliationsLeft = unit.unit.retaliationsPerRound ?? 1;
     }
 
-    this.resolvedOrders.clear();
+    this.resolvedGroups.length = 0;
     this.rebuildQueue();
 
     return [{ type: 'RoundStarted', round: this.state.round }, ...this.turnHeadToFirst()];
@@ -1027,5 +1224,13 @@ export function createBattle(
 
 
 
+
+/** An empty group, used only to ask "who is the current unit here" safely. */
+const EMPTY_GROUP: TurnGroup = {
+  segment: 'normal',
+  speed: 0,
+  unitIds: [],
+  isCrossSide: false,
+};
 
 type UnitIndex = Map<string, BattleUnit>;
