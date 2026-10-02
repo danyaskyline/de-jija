@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 93. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 91. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -14,7 +14,6 @@
 - [`package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/package.json) — _данные/конфиг (JSON)_
 - [`README.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/README.md) — de-jija
 - [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md) — START-HERE — входная точка для ИИ-агента
-- [`tmp-vitest.txt`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tmp-vitest.txt)
 - [`tsconfig.base.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tsconfig.base.json) — _данные/конфиг (JSON)_
 
 ## docs
@@ -65,7 +64,6 @@
 - [`server/src/debug/debugRoutes.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/debugRoutes.ts) — экспорты: createDebugRouter
 - [`server/src/index.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/index.ts) — _без экспортов_
 - [`server/tsconfig.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/tsconfig.json) — _данные/конфиг (JSON)_
-- [`server/vitest-out.txt`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/vitest-out.txt)
 
 ## client
 

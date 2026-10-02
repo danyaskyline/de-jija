@@ -1039,7 +1039,7 @@ describe('002/4 — the priority indicator the interface reads from the state', 
 
     const rolled = battle.getState().log[0];
 
-    expect(rolled.type).toBe('PriorityRolled');
+    if (rolled?.type !== 'PriorityRolled') throw new Error('the first event must be PriorityRolled');
     expect(indicator(battle).reason).toBe(rolled.reason);
     expect(indicator(battle).reason).toBe('coin');
   });
@@ -1067,21 +1067,24 @@ describe('002/4 — the priority indicator the interface reads from the state', 
       expect(next).not.toBe(current);
       expect(next).toBe(oppositeSide(current));
 
-      // Every unit of the round acts, so the next real pass is the next event.
-      const played = [current];
+      // Every unit of the round acts. Rule 4b shifts the priority ONCE per
+      // cross-side GROUP, not once per unit, so a round of two equal-speed
+      // units is a single situation and produces a single pass.
       let guard = 0;
       while (battle.getState().turns.currentUnitId !== null && guard < 20) {
         battle.endTurn();
         guard += 1;
-        played.push(indicator(battle).current);
       }
 
+      // The indicator must land exactly where the battle really put the
+      // priority: after the round, the state and the last real pass agree.
       const passes = passedEvents(battle);
-      const expectedPasses = played.length - 1;
-      expect(passes.length).toBeGreaterThanOrEqual(expectedPasses);
+      const lastPass = passes[passes.length - 1];
 
-      const nextPass = passes[round];
-      if (nextPass) expect(nextPass.to).toBe(oppositeSide(nextPass.from));
+      expect(lastPass).toBeDefined();
+      expect(lastPass.to).toBe(oppositeSide(lastPass.from));
+      expect(indicator(battle).current).toBe(lastPass.to);
+      expect(indicator(battle).next).toBe(oppositeSide(indicator(battle).current));
 
       battle.nextRound();
     }
