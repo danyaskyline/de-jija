@@ -17,6 +17,28 @@ out/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.jks
+*.keystore
+*.ppk
+id_rsa
+id_ed25519
+secrets/
+*.secrets
+credentials.json
+service-account*.json
+
+# Local data and databases
+*.sqlite
+*.sqlite3
+*.db
+data/
+local/
+*.local.json
 
 # Logs
 logs/
