@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 75. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 79. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -87,6 +87,10 @@
 ## tools
 
 - [`tools/check-docs.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/check-docs.mjs) — _без экспортов_
+- [`tools/checks/active-task.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.mjs) — экспорты: checkActiveTask
+- [`tools/checks/active-task.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.test.mjs) — _без экспортов_
+- [`tools/checks/adr-numbers.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-numbers.mjs) — экспорты: checkAdrNumbers
+- [`tools/checks/adr-numbers.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-numbers.test.mjs) — _без экспортов_
 - [`tools/checks/index-freshness.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/index-freshness.mjs) — экспорты: checkIndexFresh
 - [`tools/checks/index-freshness.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/index-freshness.test.mjs) — _без экспортов_
 - [`tools/checks/links.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/links.mjs) — экспорты: LINK_SCAN_FILES, findRelativeLinks, checkLinks, resolveRelative

@@ -7,6 +7,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkLinks } from './checks/links.mjs';
 import { checkIndexFresh } from './checks/index-freshness.mjs';
+import { checkActiveTask } from './checks/active-task.mjs';
+import { checkAdrNumbers } from './checks/adr-numbers.mjs';
 import { renderIndex } from './gen-index.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -189,6 +191,17 @@ for (const rel of collectNeutralFiles()) {
   const head = gitRaw(['show', 'HEAD:docs/INDEX.md']);
   const committed = staged !== '' ? staged : head !== '' ? head : null;
   errors.push(...checkIndexFresh(committed, renderIndex()).errors);
+}
+
+// (c) The active task named in part B must exist in docs/tasks/.
+errors.push(
+  ...checkActiveTask(read('START-HERE.md'), (t) => existsSync(join(ROOT, t))).errors,
+);
+
+// (d) ADR numbering in docs/decisions.md: no gaps, no duplicates.
+{
+  const taskFiles = mdFilesUnder('docs/tasks').map((rel) => ({ rel, text: read(rel) }));
+  errors.push(...checkAdrNumbers(read('docs/decisions.md'), taskFiles).errors);
 }
 
 // --- Output ------------------------------------------------------------------
