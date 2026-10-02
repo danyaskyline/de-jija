@@ -75,5 +75,5 @@
 - После завершения каждой согласованной задачи — делать коммит с понятным сообщением в духе Conventional Commits (feat:, fix:, chore:, docs: и т.д.).
 - Пушить в origin/main после коммита, если не сказано иное явно.
 - НИКОГДА не использовать `git push --force` или `git push --force-with-lease` без явного отдельного разрешения в конкретной задаче — даже если обычный push уже стал рутиной.
-- Wip-коммиты (`wip: ...`) разрешены **только** по триггеру «лимит»/«handoff» (см. [`docs/workflow/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/handoff.md)) — чтобы передать состояние в другой чат. Во всех остальных случаях — обычные коммиты по Conventional Commits, как описано выше.
+- Wip-коммиты (`wip: ...`) разрешены **только** по триггеру «лимит»/«handoff» (см. [`./workflow/handoff.md`](./workflow/handoff.md)) — чтобы передать состояние в другой чат. Во всех остальных случаях — обычные коммиты по Conventional Commits, как описано выше.
 
