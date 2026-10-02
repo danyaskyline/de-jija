@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 88. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 91. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -89,6 +89,8 @@
 - [`tools/check-docs.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/check-docs.mjs) — _без экспортов_
 - [`tools/checks/active-task.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.mjs) — экспорты: checkActiveTask
 - [`tools/checks/active-task.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.test.mjs) — _без экспортов_
+- [`tools/checks/adr-history.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-history.mjs) — экспорты: checkAdrHistoryPreserved
+- [`tools/checks/adr-history.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-history.test.mjs) — _без экспортов_
 - [`tools/checks/adr-numbers.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-numbers.mjs) — экспорты: checkAdrNumbers
 - [`tools/checks/adr-numbers.test.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/adr-numbers.test.mjs) — _без экспортов_
 - [`tools/checks/config-keys.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/config-keys.mjs) — экспорты: checkConfigKeysInDoc
@@ -119,3 +121,7 @@
 
 - [`.githooks/pre-commit`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-commit)
 - [`.githooks/pre-push`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-push)
+
+## .github
+
+- [`.github/workflows/ci.yml`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.github/workflows/ci.yml) — _конфиг YAML_

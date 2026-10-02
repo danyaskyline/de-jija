@@ -1,0 +1,64 @@
+name: CI
+
+# Least privilege: the workflow only reads the repository, it never writes to it.
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the doc checks compare against a base commit.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      # The commit range this run must verify:
+      #   push        -> everything introduced by this push
+      #   pull_request -> everything the branch adds over its base
+      # A branch's first push has an all-zero "before" commit, so we fall back to HEAD.
+      - name: Compute commit range
+        id: range
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+          if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "range=HEAD" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=$BASE..$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Using range: $(cat "$GITHUB_OUTPUT" | tail -1)"
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      # Same checks as the local hooks, but over the whole push range, plus the
+      # append-only ADR check that needs git history.
+      - name: Doc checks
+        env:
+          CHECK_RANGE: ${{ steps.range.outputs.range }}
+          CHECK_BASE: ${{ steps.range.outputs.range == 'HEAD' && '' || steps.range.outputs.range }}
+        run: |
+          set -euo pipefail
+          if [ "$CHECK_RANGE" = "HEAD" ]; then
+            unset CHECK_BASE   # no base commit: skip the append-only ADR check
+          fi
+          npm run check

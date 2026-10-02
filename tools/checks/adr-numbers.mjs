@@ -31,16 +31,17 @@ export function checkAdrNumbers(decisionsText, taskFiles) {
   const sorted = [...new Set(numbers)].sort((a, b) => a - b);
   for (let i = 1; i < sorted.length; i++) {
     const missing = sorted[i] - sorted[i - 1];
-    if (missing > 1) {
-      for (let n = sorted[i - 1] + 1; n < sorted[i]; n++) {
-        if (reserved.has(n)) continue;
-        errors.push(
-          `docs/decisions.md: ADR ${pad(n)} is missing between ${pad(sorted[i - 1])} and ${pad(sorted[i])}.\n` +
-            `  Fix: restore that ADR, or — if it is reserved on purpose — add a line ` +
-            `"Зарезервированный ADR: ${pad(n)}" to the relevant task file in docs/tasks/.`,
-        );
-      }
-    }
+    if (missing <= 1) continue;
+    const holes = [];
+    for (let n = sorted[i - 1] + 1; n < sorted[i]; n++) if (!reserved.has(n)) holes.push(n);
+    if (holes.length === 0) continue;
+    // A huge gap is almost always a renumbering, not 90 lost ADRs: report it once.
+    const list = holes.length <= 5 ? holes.map(pad).join(', ') : `${pad(holes[0])}…${pad(holes[holes.length - 1])} (${holes.length} numbers)`;
+    errors.push(
+      `docs/decisions.md: ADR numbers missing between ${pad(sorted[i - 1])} and ${pad(sorted[i])}: ${list}.\n` +
+        `  Fix: restore the missing ADR(s), or — if a number is reserved on purpose — add a line ` +
+        `"Зарезервированный ADR: NNN" to the relevant task file in docs/tasks/.`,
+    );
   }
   return { errors, warnings: [] };
 }

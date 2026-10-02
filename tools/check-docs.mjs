@@ -9,6 +9,7 @@ import { checkLinks } from './checks/links.mjs';
 import { checkIndexFresh } from './checks/index-freshness.mjs';
 import { checkActiveTask } from './checks/active-task.mjs';
 import { checkAdrNumbers } from './checks/adr-numbers.mjs';
+import { checkAdrHistoryPreserved } from './checks/adr-history.mjs';
 import { checkFormulaDocPairing } from './checks/formula-doc-pairing.mjs';
 import { checkConfigKeysInDoc } from './checks/config-keys.mjs';
 import { checkSecrets } from './checks/secrets.mjs';
@@ -219,6 +220,19 @@ errors.push(
 {
   const taskFiles = mdFilesUnder('docs/tasks').map((rel) => ({ rel, text: read(rel) }));
   errors.push(...checkAdrNumbers(read('docs/decisions.md'), taskFiles).errors);
+}
+
+// CI-only: ADRs are append-only. Runs only when a base commit is provided,
+// so a local checkout without history is not affected.
+{
+  const base = process.env.CHECK_BASE;
+  if (base) {
+    const before = gitRaw(['show', `${base}:docs/decisions.md`]);
+    const baseNumbers = before
+      ? [...before.matchAll(/^## (\d{3})\b/gm)].map((m) => Number(m[1]))
+      : [];
+    errors.push(...checkAdrHistoryPreserved(baseNumbers, read('docs/decisions.md')).errors);
+  }
 }
 
 // (e) The damage formula and its document must change in the same commit.

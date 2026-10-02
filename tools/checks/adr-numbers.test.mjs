@@ -18,8 +18,15 @@ test('good case: a gap declared as reserved in a task file is allowed', () => {
 test('bad case: an undeclared gap', () => {
   const { errors } = checkAdrNumbers(dec('001 — A', '003 — B'), []);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /002 is missing/);
+  assert.match(errors[0], /missing between 001 and 003/);
+  assert.match(errors[0], /002/);
   assert.match(errors[0], /Зарезервированный ADR/);
+});
+
+test('bad case: a huge gap is reported once, not once per number', () => {
+  const { errors } = checkAdrNumbers(dec('001 — A', '099 — Z'), []);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /\(97 numbers\)/);
 });
 
 test('bad case: duplicate numbers', () => {
