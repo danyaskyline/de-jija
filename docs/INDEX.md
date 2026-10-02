@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 70. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 71. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -26,6 +26,7 @@
 - [`docs/game-design.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/game-design.md) — Game Design — MMO в духе Heroesland/HoMM3
 - [`docs/tasks/001-turn-queue.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/001-turn-queue.md) — Задача 001: очередь ходов в бою
 - [`docs/tasks/002-tie-rule-and-priority-indicator.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — Задача 002: правка равной скорости, начальный приоритет и индикатор приоритета
+- [`docs/tasks/003-blocking-checks.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/003-blocking-checks.md) — Задача 003: блокирующие проверки, git-хуки и CI
 - [`docs/workflow/done.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/done.md) — Done — закрыть шаг или задачу
 - [`docs/workflow/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/handoff.md) — Handoff — передать контекст в новую сессию
 - [`docs/workflow/start.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/workflow/start.md) — Start — начать или продолжить сессию
