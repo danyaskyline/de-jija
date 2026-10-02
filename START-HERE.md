@@ -40,6 +40,8 @@
 - Текущая задача:
   https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md
 
+**Для чтения в новом чате используй ссылку с хэшем коммита, а не `main` (`main` может отдавать устаревшую копию из кэша).**
+
 **Если часть B старше последнего коммита — верь `git log -5` и `git status`.**
 
 **Как читать репо экономно**
