@@ -158,6 +158,38 @@ describe('страница /debug/battle-sandbox загружается', () => 
   }, 20000);
 });
 
+describe('панель очереди ходов показывает то, что прислал сервер', () => {
+  it('рисует два сегмента, индикатор и кнопки хода', async () => {
+    const { window, errors } = openPage();
+
+    await waitForInit(window);
+
+    const document = window.document;
+    const turns = document.getElementById('turns');
+
+    expect(turns, 'панель очереди не найдена').not.toBeNull();
+
+    // The panel must have real content, not the "no queue yet" placeholder:
+    // the page creates a battle during init, so the queue exists.
+    const text = turns?.textContent ?? '';
+
+    expect(text).toContain('Приоритет:');
+    expect(text).toContain('Сегмент ходов');
+    expect(text).toContain('Ждут в этом раунде');
+
+    // The indicator must name both the current side and where it goes next.
+    expect(text).toMatch(/Приоритет: (левая|правая) → после следующей ничьей: (левая|правая)/);
+
+    // Two buttons for the current unit, wired to the new routes.
+    expect(document.getElementById('btn-end-turn')).not.toBeNull();
+    expect(document.getElementById('btn-wait')).not.toBeNull();
+
+    expect(errors, 'ошибки при отрисовке панели очереди').toEqual([]);
+
+    window.close();
+  }, 20000);
+});
+
 describe('журнал страницы показывает новые события очереди ходов', () => {
   it('рисует PriorityRolled / PriorityPassed / UnitWaited / TurnStarted и не падает', async () => {
     const { window, errors } = openPage();

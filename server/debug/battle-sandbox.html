@@ -68,6 +68,16 @@
       button.danger { background: #7f2a2a; }
       button:disabled { background: #2a2f3a; color: #6b7280; cursor: not-allowed; }
       .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      /* The turn queue: one chip per unit, the current one highlighted. */
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+      .chip {
+        border: 1px solid #2c313b; border-radius: 4px; padding: 3px 7px;
+        background: #191c22; font-size: 12px;
+      }
+      .chip-current { border-color: #9fd3ff; background: #1d2b3a; font-weight: 600; }
+      .chip-dead { opacity: 0.45; text-decoration: line-through; }
+      .speed-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+      .speed-input { width: 70px; }
       /* One unit card in a side panel. */
       .unit-card {
         border: 1px solid #2c313b; border-radius: 6px;
@@ -154,6 +164,19 @@
         <section>
           <h2>Инструменты</h2>
           <div id="tools"></div>
+        </section>
+
+        <section>
+          <h2>Очередь ходов</h2>
+          <div id="turns"></div>
+          <div class="btn-row">
+            <button id="btn-end-turn">Завершить ход</button>
+            <button class="secondary" id="btn-wait">Ждать</button>
+          </div>
+          <div class="hint" style="margin-top: 6px">
+            «Ждать» и «Завершить ход» работают для текущего юнита. Скорость меняется для
+            любого выбранного юнита — так проверяется спешка и замедление.
+          </div>
         </section>
 
         <section>
@@ -609,6 +632,63 @@
         renderAll();
       }
 
+      /** The current unit is done: the queue moves on. */
+      async function sendEndTurn() {
+        if (!state.battleId) return;
+
+        const body = (await apiSend(`/debug/battles/${state.battleId}/end-turn`)).body;
+
+        if (body.ok === false) showRefusal(body.code, body.message);
+        else setStatus('Ход завершён', '', false);
+
+        if (body.state) state.battle = body.state;
+        for (const event of body.events || []) addLogRow(event);
+        await refreshTargets();
+        renderAll();
+      }
+
+      /** The current unit moves to the waiting segment of the round. */
+      async function sendWait() {
+        if (!state.battleId || !state.battle) return;
+
+        const current = state.battle.turns.currentUnitId;
+
+        if (!current) {
+          setStatus('Сейчас никто не ходит', '', false);
+          return;
+        }
+
+        const body = (await apiSend(`/debug/battles/${state.battleId}/wait`, { unitId: current })).body;
+
+        if (body.ok === false) showRefusal(body.code, body.message);
+        else setStatus(current + ' ждёт', '', false);
+
+        if (body.state) state.battle = body.state;
+        for (const event of body.events || []) addLogRow(event);
+        await refreshTargets();
+        renderAll();
+      }
+
+      /** Changes the current speed of the selected unit (a haste or a slow). */
+      async function sendSpeed(speed) {
+        if (!state.battleId || !state.selectedId) return;
+
+        const body = (
+          await apiSend(`/debug/battles/${state.battleId}/speed`, {
+            unitId: state.selectedId,
+            speed: Number(speed),
+          })
+        ).body;
+
+        if (body.ok === false) showRefusal(body.code, body.message);
+        else setStatus('Скорость ' + state.selectedId + ' = ' + fmt(Number(speed)), '', false);
+
+        if (body.state) state.battle = body.state;
+        for (const event of body.events || []) addLogRow(event);
+        await refreshTargets();
+        renderAll();
+      }
+
       /** Asks the server which targets the selected unit may hit. */
       async function refreshTargets() {
         if (!state.battleId || !state.selectedId) {
@@ -1015,6 +1095,129 @@
         if (label) {
           label.textContent = 'Раунд: ' + (state.battle ? state.battle.round : 1);
         }
+      }
+
+      /**
+       * The turn queue panel: two segments, the current unit and the indicator.
+       *
+       * NOTHING here is calculated. Every number comes from `state.battle.turns`
+       * that the server sent: the order, who is current, which side has the
+       * priority and where it goes next (docs/battle.md, "Очередь ходов"). The
+       * page only words what the server decided.
+       */
+      function renderTurns() {
+        const target = document.getElementById('turns');
+
+        target.textContent = '';
+        if (!state.battle || !state.battle.turns) {
+          target.appendChild(node('div', 'Очереди пока нет', 'hint'));
+          return;
+        }
+
+        const turns = state.battle.turns;
+        const units = state.battle.units || [];
+        const waiting = units.filter((unit) => unit.hasWaitedThisRound && unit.aliveCount > 0);
+        const byId = new Map(units.map((unit) => [unit.id, unit]));
+
+        /** The side label of a unit, read from the state the server sent. */
+        function sideOf(unitId) {
+          const unit = byId.get(unitId);
+          if (!unit) return '?';
+          return unit.side === 'left' ? 'левая' : 'правая';
+        }
+
+        function chip(unitId, isCurrent) {
+          const unit = byId.get(unitId);
+          const dead = !unit || unit.aliveCount <= 0;
+          const className = 'chip' + (isCurrent ? ' chip-current' : '') + (dead ? ' chip-dead' : '');
+          const speed = unit ? fmt(unit.currentSpeed) : '?';
+
+          return node('span', unitId + ' (' + sideOf(unitId) + ', скор. ' + speed + ')', className);
+        }
+
+        // The current unit, or the explicit "nobody is acting now".
+        const current = document.createElement('div');
+
+        current.className = 'hint';
+        current.textContent = turns.currentUnitId
+          ? 'Ходит: ' + turns.currentUnitId + ' (' + sideOf(turns.currentUnitId) + ')'
+          : 'Сейчас никто не ходит: очередь исчерпана';
+        target.appendChild(current);
+
+        // The indicator: only what the state holds, no "the battle ends soon".
+        const indicator = document.createElement('div');
+
+        indicator.className = 'hint';
+        indicator.textContent =
+          'Приоритет: ' + (turns.prioritySide === 'left' ? 'левая' : 'правая') +
+          ' → после следующей ничьей: ' + (turns.nextPrioritySide === 'left' ? 'левая' : 'правая') +
+          (turns.initialPriorityReason ? ' (начальный приоритет: ' + turns.initialPriorityReason + ')' : '');
+        target.appendChild(indicator);
+
+        // A side with nobody alive gets its own line — again, a fact, not a guess.
+        for (const side of ['left', 'right']) {
+          const alive = units.filter((unit) => unit.side === side && unit.aliveCount > 0).length;
+
+          if (alive === 0) {
+            const empty = node('div', 'у стороны ' + (side === 'left' ? 'левой' : 'правой') + ' нет живых юнитов', 'hint');
+
+            target.appendChild(empty);
+          }
+        }
+
+        // Segment 1: the acting segment, in the order of the state.
+        const acting = document.createElement('div');
+
+        acting.className = 'chips';
+        for (const unitId of turns.order) {
+          acting.appendChild(chip(unitId, unitId === turns.currentUnitId));
+        }
+        if (turns.order.length === 0) acting.appendChild(node('span', '—', 'hint'));
+        target.appendChild(node('div', 'Сегмент ходов', 'hint'));
+        target.appendChild(acting);
+
+        // Segment 2: the waiting segment of THIS round (rule 2).
+        const waitingRow = document.createElement('div');
+
+        waitingRow.className = 'chips';
+        for (const unit of waiting) {
+          waitingRow.appendChild(chip(unit.id, unit.id === turns.currentUnitId));
+        }
+        if (waiting.length === 0) waitingRow.appendChild(node('span', '—', 'hint'));
+        target.appendChild(node('div', 'Ждут в этом раунде', 'hint'));
+        target.appendChild(waitingRow);
+
+        // The speed control: for the SELECTED unit, current or not.
+        const speedRow = document.createElement('div');
+
+        speedRow.className = 'speed-row';
+        const selected = state.selectedId ? byId.get(state.selectedId) : null;
+        const speedLabel = node(
+          'span',
+          selected ? 'Скорость ' + state.selectedId + ': ' + fmt(selected.currentSpeed) : 'Выберите юнита, чтобы менять скорость',
+          'hint',
+        );
+
+        speedRow.appendChild(speedLabel);
+
+        if (selected) {
+          const input = document.createElement('input');
+
+          input.type = 'number';
+          input.id = 'speed-input';
+          input.value = String(selected.currentSpeed);
+          input.className = 'speed-input';
+          speedRow.appendChild(input);
+
+          const apply = document.createElement('button');
+
+          apply.className = 'secondary';
+          apply.id = 'btn-speed';
+          apply.textContent = 'Сменить';
+          apply.addEventListener('click', () => sendSpeed(document.getElementById('speed-input').value));
+          speedRow.appendChild(apply);
+        }
+        target.appendChild(speedRow);
       }
 
       /** Rebuilds the mode line from the two hero toggles. */
@@ -1925,6 +2128,7 @@
       function renderAll() {
         renderField();
         renderTools();
+        renderTurns();
         renderMode();
         renderSelected();
         renderLog();
@@ -1980,6 +2184,8 @@
           });
           document.getElementById('setup-copy').addEventListener('click', copySetupText);
           document.getElementById('setup-apply').addEventListener('click', applySetupFromText);
+          document.getElementById('btn-end-turn').addEventListener('click', sendEndTurn);
+          document.getElementById('btn-wait').addEventListener('click', sendWait);
         });
         await step('первая отрисовка', () => {
           renderAll();
