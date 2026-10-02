@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 91. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 93. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -14,6 +14,7 @@
 - [`package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/package.json) — _данные/конфиг (JSON)_
 - [`README.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/README.md) — de-jija
 - [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md) — START-HERE — входная точка для ИИ-агента
+- [`tmp-vitest.txt`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tmp-vitest.txt)
 - [`tsconfig.base.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tsconfig.base.json) — _данные/конфиг (JSON)_
 
 ## docs
@@ -39,13 +40,13 @@
 - [`server/debug/combat-sandbox.html`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/debug/combat-sandbox.html) — _HTML-страница_
 - [`server/package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/package.json) — _данные/конфиг (JSON)_
 - [`server/src/battle/battle.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.test.ts) — _без экспортов_
-- [`server/src/battle/battle.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.ts) — экспорты: BattleDeps, CommandOk, Battle, createBattle
+- [`server/src/battle/battle.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.ts) — экспорты: BattleDeps, CommandOk, oppositeSide, Battle, createBattle
 - [`server/src/battle/battleRules.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleRules.test.ts) — _без экспортов_
 - [`server/src/battle/battleRules.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleRules.ts) — экспорты: DEFAULT_BATTLE_RULES_PATH, BattleRules, parseBattleRules, loadBattleRules, setBattleRules, getBattl…
 - [`server/src/battle/battleTurns.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleTurns.test.ts) — _без экспортов_
 - [`server/src/battle/hex.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/hex.test.ts) — _без экспортов_
 - [`server/src/battle/turnQueue.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/turnQueue.test.ts) — _без экспортов_
-- [`server/src/battle/turnQueue.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/turnQueue.ts) — экспорты: TurnQueueUnit, TurnGroup, levelRank, InitialPriorityReason, InitialPriority, decideInitialPriority,…
+- [`server/src/battle/turnQueue.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/turnQueue.ts) — экспорты: TurnQueueUnit, TurnGroup, levelRank, InitialPriority, decideInitialPriority, compareWithinSide, …
 - [`server/src/combat/combatant.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/combatant.test.ts) — _без экспортов_
 - [`server/src/combat/combatant.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/combatant.ts) — экспорты: emptyCombatBonuses, combinePercentBonuses, buildCombatant
 - [`server/src/combat/combatRules.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/combatRules.test.ts) — _без экспортов_
@@ -64,6 +65,7 @@
 - [`server/src/debug/debugRoutes.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/debugRoutes.ts) — экспорты: createDebugRouter
 - [`server/src/index.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/index.ts) — _без экспортов_
 - [`server/tsconfig.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/tsconfig.json) — _данные/конфиг (JSON)_
+- [`server/vitest-out.txt`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/vitest-out.txt)
 
 ## client
 

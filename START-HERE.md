@@ -55,11 +55,11 @@
 - **Активная задача:** [docs/tasks/002-tie-rule-and-priority-indicator.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — сделано шаги 0–3 из 7.
 - **Цель:** правка равной скорости в очереди ходов, начальный приоритет и индикатор приоритета в бою.
 - **Сделано:** шаг 1 — каскад равной скорости (`orderEqualSpeedGroup`); шаг 2 — начальный приоритет `decideInitialPriority`; шаг 3 — правило «новичок в уже разрешённой группе» (память групп `ResolvedGroup` в `server/src/battle/battle.ts`; приоритет тратится по параметру `keepCurrent`, не по `state.turns.currentUnitId`).
-- **В процессе:** ничего — остановлено на границе шагов 3 и 4.
+- **В процессе:** шаг 4 в работе, **правки не закоммичены**: `server/src/battle/battle.ts` (+41), `turnQueue.ts` (+5), `battleTurns.test.ts` (+111), `shared/src/index.ts` (+26), `docs/tasks/002-…md` (+13). Незакоммичено также `server/vitest-out.txt` и пустой `tmp-vitest.txt` — временные файлы, их удалить.
 - **Следующий шаг:** **шаг 4 — индикатор приоритета** (`nextPrioritySide`, `initialPriorityReason`). Далее: шаг 5 — транспорт (`wait` / `end-turn` / `speed`), шаг 6 — боевая песочница в `battle-sandbox.html`, шаг 7 — `docs/battle.md`, ADR 022 (номер зарезервирован под эту задачу), строка статуса в 021, раздел «Итог», финальный push.
 - **Тронутые файлы (002, шаги 1–3):** `server/src/battle/battle.ts`, `server/src/battle/turnQueue.ts`, `server/src/battle/battleTurns.test.ts`, `server/src/battle/battle.test.ts`, `server/src/battle/turnQueue.test.ts`.
 - **Как проверить:** `npm test`, `npm run typecheck`, `npm run check`; песочница — `npm run dev:server` и `http://127.0.0.1:3000/debug/battle-sandbox`.
 - **Тесты:** см. `npm test` — должен быть зелёным; `npm run typecheck` — чистым. Число тестов здесь не записывается.
 - **Подводные камни:** T1 на шаге 3 усилен третьим юнитом группы (иначе не доказывал ветку (а)); T3 не отличает ветку (в) от (б) — их доказывают существующие тесты и T6; T6 ловит почти любое отключение, это ожидаемо. `config/*.json` читается один раз при старте сервера — после правки нужен рестарт.
 - **Открытые вопросы:** нет. Внутренние цифры из `docs/game-design.md` оставлены как есть, решение принято автором.
-- **Обновлено:** 2026-10-02, роль CLI-агент — 003 закрыта, введена роль веб-ИИ (`docs/workflow/web-ai.md`), задача 002 возвращена в работу с шага 4.
+- **Обновлено:** 2026-10-02, роль CLI-агент — 003 закрыта, введена роль веб-ИИ (`docs/workflow/web-ai.md`), задача 002 в работе с шага 4; handoff: правки шага 4 остались незакоммиченными и перечислены в «В процессе».

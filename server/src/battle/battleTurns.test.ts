@@ -12,7 +12,7 @@ import type { BattleSetup, CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules } from '../combat/combatRules';
 import { initSkills, type SkillsData } from '../combat/skills';
-import { createBattle, type Battle } from './battle';
+import { createBattle, oppositeSide, type Battle } from './battle';
 import type { BattleRules } from './battleRules';
 
 /** A small field, so the start zone and the borders are easy to reason about. */
@@ -983,7 +983,11 @@ describe('the queue lives in the state, so the interface only asks', () => {
     expect(battle.getState().turns).toEqual({
       order: ['a2', 'b1'],
       currentUnitId: 'a1',
+      // b1 is faster, so the speed decided it — the coin was never thrown
+      // and the priority passed to the slower side to win the draws (002/0).
       prioritySide: 'right',
+      nextPrioritySide: 'left',
+      initialPriorityReason: 'speed',
     });
   });
 
@@ -1005,6 +1009,111 @@ describe('the queue lives in the state, so the interface only asks', () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       expect(turnsOf(build())).toEqual(turnsOf(first));
     }
+  });
+});
+
+describe('002/4 — the priority indicator the interface reads from the state', () => {
+  /** The indicator fields the interface shows, read from the state only. */
+  function indicator(battle: Battle) {
+    const { turns } = battle.getState();
+
+    return {
+      current: turns.prioritySide,
+      next: turns.nextPrioritySide,
+      reason: turns.initialPriorityReason,
+    };
+  }
+
+  /** All PriorityPassed events of the battle, in order. */
+  function passedEvents(battle: Battle) {
+    return battle.getState().log.filter((event) => event.type === 'PriorityPassed');
+  }
+
+  it('the reason in the state is the reason of the opening PriorityRolled event', () => {
+    // Equal top speeds: the coin decides, so the reason must be 'coin' in BOTH
+    // the state and the first event — they may not drift apart (002/4).
+    const battle = makeBattle(
+      setupOf([{ id: 'a1', unit: fighter(11) }], [{ id: 'b1', unit: fighter(11) }]),
+      { coin: 0.2, enforceTurns: true },
+    );
+
+    const rolled = battle.getState().log[0];
+
+    expect(rolled.type).toBe('PriorityRolled');
+    expect(indicator(battle).reason).toBe(rolled.reason);
+    expect(indicator(battle).reason).toBe('coin');
+  });
+
+  it('different top speeds: the reason is the speed, not a thrown coin', () => {
+    const battle = makeBattle(
+      setupOf([{ id: 'a1', unit: fighter(9) }], [{ id: 'b1', unit: fighter(11) }]),
+      { enforceTurns: true },
+    );
+
+    expect(indicator(battle).reason).toBe('speed');
+  });
+
+  it('the next side is always the opposite, and it is exactly where the next real pass goes', () => {
+    // This is the guard against the two fields drifting apart: over several
+    // rounds the indicator must match the `to` of the NEXT real PriorityPassed.
+    const battle = makeBattle(
+      setupOf([{ id: 'a1', unit: fighter(11) }], [{ id: 'b1', unit: fighter(11) }]),
+      { coin: 0.2, enforceTurns: true },
+    );
+
+    for (let round = 0; round < 4; round += 1) {
+      const { current, next } = indicator(battle);
+
+      expect(next).not.toBe(current);
+      expect(next).toBe(oppositeSide(current));
+
+      // Every unit of the round acts, so the next real pass is the next event.
+      const played = [current];
+      let guard = 0;
+      while (battle.getState().turns.currentUnitId !== null && guard < 20) {
+        battle.endTurn();
+        guard += 1;
+        played.push(indicator(battle).current);
+      }
+
+      const passes = passedEvents(battle);
+      const expectedPasses = played.length - 1;
+      expect(passes.length).toBeGreaterThanOrEqual(expectedPasses);
+
+      const nextPass = passes[round];
+      if (nextPass) expect(nextPass.to).toBe(oppositeSide(nextPass.from));
+
+      battle.nextRound();
+    }
+  });
+
+  it('replaying the log gives the same priority the state holds', () => {
+    // If the state and the journal ever disagreed, an interface that draws from
+    // one and a replay that reads the other would show different things.
+    const battle = makeBattle(
+      setupOf([{ id: 'a1', unit: fighter(11) }], [{ id: 'b1', unit: fighter(11) }]),
+      { coin: 0.2, enforceTurns: true },
+    );
+
+    for (let round = 0; round < 3; round += 1) {
+      let guard = 0;
+      while (battle.getState().turns.currentUnitId !== null && guard < 20) {
+        battle.endTurn();
+        guard += 1;
+      }
+      battle.nextRound();
+    }
+
+    const log = battle.getState().log;
+    const rolled = log.find((event) => event.type === 'PriorityRolled');
+    expect(rolled).toBeDefined();
+
+    let replayed = (rolled as { side: 'left' | 'right' }).side;
+    for (const event of log) {
+      if (event.type === 'PriorityPassed') replayed = event.to;
+    }
+
+    expect(replayed).toBe(battle.getState().turns.prioritySide);
   });
 });
 describe('002/2 — a newcomer in an already decided group', () => {

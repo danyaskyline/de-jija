@@ -29,7 +29,7 @@
  * Everything here is deterministic: the same input always gives the same order.
  */
 
-import type { BattleSide } from '@de-jija/shared';
+import type { BattleSide, InitialPriorityReason } from '@de-jija/shared';
 
 /** What the queue needs to know about one unit. Battle passes it as is. */
 export type TurnQueueUnit = {
@@ -76,9 +76,6 @@ export function levelRank(tier: number | undefined, upgraded: boolean | undefine
 function rankOf(unit: TurnQueueUnit): number {
   return levelRank(unit.tier, unit.upgraded);
 }
-
-/** Why the side got the priority when the battle was created (002/0). */
-export type InitialPriorityReason = 'speed' | 'coin';
 
 /** The result of the opening priority decision of task 002, rule 0. */
 export type InitialPriority = {

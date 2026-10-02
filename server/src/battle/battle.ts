@@ -82,6 +82,16 @@ function refuse(code: BattleErrorCode, message: string) {
  * commands (placeUnit / attack / nextRound / getState / getValidTargets).
  */
 /**
+ * The other side of the battle — the one and only implementation of rule 4b
+ * ("after a draw the priority passes to the opposite side", 002/4b).
+ *
+ * It is exported so the tests can state the same rule without reaching into
+ * private methods, and so nobody re-implements the flip by hand.
+ */
+export const oppositeSide = (side: BattleSide): BattleSide =>
+  side === 'left' ? 'right' : 'left';
+
+/**
  * A group of equal speed whose draw was already decided in this round
  * (002/2, and the protection 4g of task 001).
  *
@@ -129,6 +139,19 @@ export class Battle {
 
   /** The groups of the current order, kept so the head can be resolved lazily. */
   private groups: TurnGroup[] = [];
+
+  /**
+   * The ONLY place where the priority side is written.
+   *
+   * Rule 4b ("after a draw the priority passes to the OTHER side") lives in
+   * `oppositeSide` and nowhere else — not in the sandbox, not in the client.
+   * Both `prioritySide` and the indicator field `nextPrioritySide` are written
+   * together here, so the indicator can never disagree with the real priority.
+   */
+  private setPrioritySide(side: BattleSide): void {
+    this.state.turns.prioritySide = side;
+    this.state.turns.nextPrioritySide = oppositeSide(side);
+  }
 
   constructor(
     state: BattleState,
@@ -797,7 +820,7 @@ export class Battle {
 
     if (head !== undefined && head.isCrossSide && this.storedFor(head) === null) {
       const from = this.state.turns.prioritySide;
-      const to: BattleSide = from === 'left' ? 'right' : 'left';
+      const to: BattleSide = oppositeSide(from);
 
       // The group is remembered either way (002/2): firstSide is the side that had
       // the priority, so a later rebuild of this group starts from the same side.
@@ -818,7 +841,7 @@ export class Battle {
         // stays and will pass at the next draw where it really goes first.
         this.state.turns.currentUnitId = reallyFirst;
       } else {
-        this.state.turns.prioritySide = to;
+        this.setPrioritySide(to);
         events.push({
           type: 'PriorityPassed',
           round: this.state.round,
@@ -945,7 +968,8 @@ export class Battle {
       this.random() < 0.5 ? 'left' : 'right',
     );
 
-    this.state.turns.prioritySide = decision.prioritySide;
+    this.setPrioritySide(decision.prioritySide);
+    this.state.turns.initialPriorityReason = decision.reason;
 
     return {
       type: 'PriorityRolled',
@@ -1210,7 +1234,16 @@ export function createBattle(
     log,
     // The queue itself is built by the turn queue module (step 2); here the
     // battle only carries a complete starting shape.
-    turns: { order: [], currentUnitId: null, prioritySide: 'left' },
+    // PLACEHOLDERS: openQueue() runs immediately after this and overwrites both
+    // with the real values. They are here only so the state shape is complete
+    // and no reader has to wonder what a missing field means (002, step 4).
+    turns: {
+      order: [],
+      currentUnitId: null,
+      prioritySide: 'left',
+      nextPrioritySide: 'right',
+      initialPriorityReason: 'speed',
+    },
   };
   const battle = new Battle(state, units, { ...deps, combatRules }, setup.placementMode);
 

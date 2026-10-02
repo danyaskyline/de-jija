@@ -169,6 +169,14 @@ export type Hex = { x: number; y: number };
 /** Which side of the field a unit fights for. */
 export type BattleSide = 'left' | 'right';
 
+/**
+ * Why a side got the priority when the battle was created (002, rule 0).
+ *
+ * It lives HERE, not in the server: the reason is both a battle-state field and
+ * an event payload, and two separate unions would drift apart.
+ */
+export type InitialPriorityReason = 'speed' | 'coin';
+
 /** How units may be put on the field before the first hit. */
 export type PlacementMode = 'free' | 'startZone';
 
@@ -354,7 +362,7 @@ export type BattleEvent =
    * решила скорость, монетка не бросалась; `reason: 'coin'` — максимальные
    * скорости сторон равны, монетку бросали (docs/tasks/002, правило 0).
    */
-  | { type: 'PriorityRolled'; side: BattleSide; reason: 'speed' | 'coin' }
+  | { type: 'PriorityRolled'; side: BattleSide; reason: InitialPriorityReason }
   /**
    * The equal-speed group was ordered by rule 3v (the priority side acts first),
    * and the priority has passed to the OTHER side (rules 4b/4v). One event per
@@ -396,6 +404,22 @@ export type TurnQueueState = {
    * really needed it (rules 4a/4b).
    */
   prioritySide: BattleSide;
+  /**
+   * Which side the priority will pass to after the next draw between the sides
+   * — always the opposite of `prioritySide` (rule 4b).
+   *
+   * It is stored rather than calculated by the interface: rule 4b is a GAME
+   * RULE, and game rules live only in the battle engine, never in the sandbox or
+   * the client. It is written in the same single place as `prioritySide`, so the
+   * two cannot disagree.
+   */
+  nextPrioritySide: BattleSide;
+  /**
+   * Why the priority was given the way it was when the battle was created:
+   * the speeds decided it, or the coin was flipped. Shown next to the indicator
+   * so the player understands where the advantage came from (002, step 4).
+   */
+  initialPriorityReason: InitialPriorityReason;
 };
 
 /** The whole state of a battle at one moment. */
