@@ -52,14 +52,14 @@
 
 > Эта часть **перезаписывается целиком** при каждом handoff, а не дописывается. Не больше 30 строк.
 
-- **Активная задача:** [docs/tasks/002-tie-rule-and-priority-indicator.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — сделано шаги 0–3 из 7.
-- **Цель:** правка равной скорости в очереди ходов, начальный приоритет и индикатор приоритета в бою.
-- **Сделано:** шаг 1 — каскад равной скорости (`orderEqualSpeedGroup`); шаг 2 — начальный приоритет `decideInitialPriority`; шаг 3 — правило «новичок в уже разрешённой группе» (память групп `ResolvedGroup` в `server/src/battle/battle.ts`; приоритет тратится по параметру `keepCurrent`, не по `state.turns.currentUnitId`); шаг 4 — индикатор приоритета (`nextPrioritySide`, `initialPriorityReason`, хелпер `oppositeSide`, единая точка записи `setPrioritySide`) + 4 теста.
-- **В процессе:** ничего — шаг 4 закончен: индикатор приоритета (`nextPrioritySide`, `initialPriorityReason`) реализован в `battle.ts` и типах `shared`, 4 теста добавлены, `npm test` и `npm run typecheck` зелёные. Временные файлы (`server/vitest-out.txt`, `tmp-vitest.txt`) удалены.
-- **Следующий шаг:** **шаг 5 — транспорт** (`wait` / `end-turn` / `speed`) в клиент и песочницу. Далее: шаг 6 — боевая песочница в `battle-sandbox.html`, шаг 7 — `docs/battle.md`, ADR 022 (номер зарезервирован под эту задачу), строка статуса в 021, раздел «Итог», финальный push.
-- **Тронутые файлы (002, шаги 1–3):** `server/src/battle/battle.ts`, `server/src/battle/turnQueue.ts`, `server/src/battle/battleTurns.test.ts`, `server/src/battle/battle.test.ts`, `server/src/battle/turnQueue.test.ts`.
-- **Как проверить:** `npm test`, `npm run typecheck`, `npm run check`; песочница — `npm run dev:server` и `http://127.0.0.1:3000/debug/battle-sandbox`.
-- **Тесты:** зелёные — `npm test`: 13 файлов, 360 тестов passed; `npm run typecheck` чистый.
-- **Подводные камни:** T1 на шаге 3 усилен третьим юнитом группы (иначе не доказывал ветку (а)); T3 не отличает ветку (в) от (б) — их доказывают существующие тесты и T6; T6 ловит почти любое отключение, это ожидаемо. `config/*.json` читается один раз при старте сервера — после правки нужен рестарт.
-- **Открытые вопросы:** нет. Внутренние цифры из `docs/game-design.md` оставлены как есть, решение принято автором.
-- **Обновлено:** 2026-10-02, роль CLI-агент (шаг 4 закрыт: индикатор приоритета + 4 теста; тесты зелёные).
+- **Активная задача:** [docs/tasks/002-tie-rule-and-priority-indicator.md](https://raw.githubusercontent.com/danyaskyline/de-jija/main/docs/tasks/002-tie-rule-and-priority-indicator.md) — **закрыта полностью, шаги 0-7.**
+- **Цель:** правка равной скорости, начальный приоритет и индикатор приоритета - достигнута.
+- **Сделано:** шаг 1 - каскад равной скорости (`orderEqualSpeedGroup`); шаг 2 - начальный приоритет `decideInitialPriority`; шаг 3 - правило "новичок в уже разрешённой группе" (память `ResolvedGroup`); шаг 4 - индикатор (`nextPrioritySide`, `initialPriorityReason`, `oppositeSide`, единая запись `setPrioritySide`); шаг 5 - три маршрута песочницы (`/end-turn`, `/wait`, `/speed`); шаг 6 - панель очереди с двумя сегментами, индикатором и кнопками хода; шаг 7 - `docs/battle.md` (15.6-15.7), ADR 022, строка статуса в 021, "Итог".
+- **В процессе:** ничего.
+- **Следующий шаг:** новую задачу выбирает автор. Предлагаемая: аудит и разбиение `battle.ts` (1269 строк) и `battleTurns.test.ts` (1609) - после того как поведение зафиксировано тестами и описано в `docs/battle.md`.
+- **Тронутые файлы (002, все шаги):** `server/src/battle/battle.ts`, `turnQueue.ts`, `battleTurns.test.ts`, `turnQueue.test.ts`, `server/src/debug/battleDebugRoutes.ts`, `battleDebugRoutes.test.ts`, `battleSandboxPage.smoke.test.ts`, `server/debug/battle-sandbox.html`, `shared/src/index.ts`, `docs/battle.md`, `docs/architecture.md`, `docs/decisions.md`.
+- **Как проверить:** `npm test`, `npm run typecheck`, `npm run check`; песочница - `npm run dev:server` и `http://127.0.0.1:3000/debug/battle-sandbox` (панель "Очередь ходов", кнопки "Завершить ход" и "Ждать").
+- **Тесты:** зелёные - `npm test`: 13 файлов, 373 теста passed; `npm run typecheck` чистый; `npm run check` - одно прежнее предупреждение про 9 длинных `.ts` файлов.
+- **Подводные камни:** при равных скоростях текущий юнит случаен (решает монетка) - тесты не должны хардкодить стороны. `enforceTurns` по умолчанию `false`, поэтому `wait` не-текущим юнитом разрешён и не крадёт очередь. Правило 4б сдвигает приоритет один раз на межстороновую группу, а не на каждый ход.
+- **Открытые вопросы:** долг из ADR 022 - переименовать `PriorityRolled` вместе с задачей про сид RNG.
+- **Обновлено:** 2026-10-02, роль CLI-агент (задача 002 закрыта полностью: шаги 4-7 сделаны, 373 теста зелёные).
