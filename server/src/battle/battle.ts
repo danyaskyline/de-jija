@@ -78,10 +78,6 @@ function refuse(code: BattleErrorCode, message: string) {
 }
 
 /**
- * The battle instance. Created by createBattle() and then driven purely by
- * commands (placeUnit / attack / nextRound / getState / getValidTargets).
- */
-/**
  * The other side of the battle — the one and only implementation of rule 4b
  * ("after a draw the priority passes to the opposite side", 002/4b).
  *
@@ -132,7 +128,8 @@ type ResolvedGroup = {
 
 /**
  * The battle instance. Created by createBattle() and then driven purely by
- * commands (placeUnit / attack / nextRound / getState / getValidTargets).
+ * commands (placeUnit / attack / endTurn / wait / setUnitSpeed / nextRound /
+ * getState / getValidTargets).
  */
 export class Battle {
   private readonly state: BattleState;
@@ -159,10 +156,9 @@ export class Battle {
   private groups: TurnGroup[] = [];
 
   /**
-   * The only method that changes `prioritySide`. The indicator goes with it, so
-   * the two can never disagree: both come from `priorityPair` (rule 4b).
-   *
-   * This is still not a guarantee — the invariant test is. See `priorityPair`.
+   * The only method that changes `prioritySide` after creation. It takes both
+   * fields from `priorityPair`, so they are written together (rule 4b).
+   * That they stay opposite is checked by the invariant test, not promised here.
    */
   private setPrioritySide(side: BattleSide): void {
     Object.assign(this.state.turns, priorityPair(side));

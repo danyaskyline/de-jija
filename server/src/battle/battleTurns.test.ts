@@ -1010,29 +1010,42 @@ describe('the queue lives in the state, so the interface only asks', () => {
       expect(turnsOf(build())).toEqual(turnsOf(first));
     }
   });
-describe('002/4в — how many times the priority shifts (counting events)', () => {
+
+describe('002/4v — how many times the priority shifts (counting events)', () => {
   // The previous test proves the STATE and the JOURNAL agree. It does not prove
-  // rule 4в itself: if the code shifted the priority once per UNIT instead of
+  // rule 4v itself: if the code shifted the priority once per UNIT instead of
   // once per cross-side group, that test would still be green. So the rule is
-  // proved here by COUNTING events — 4в says a group of three or more is ONE
+  // proved here by COUNTING events — 4v says a group of three or more is ONE
   // situation (docs/battle.md 15.2).
   const passesOf = (battle: Battle): number =>
     battle.getState().log.filter((event) => event.type === 'PriorityPassed').length;
 
   /**
-   * Plays exactly ONE round. The round starts by itself when the queue runs out
-   * (rule 2), so "play until nobody acts" would silently run into the next round
-   * and count its shifts too — the stop condition is the round number changing.
+   * Plays exactly ONE round and reports how many `PriorityPassed` it produced.
+   *
+   * Two subtleties, both paid for with wrong numbers first:
+   *   - The round starts BY ITSELF when the queue runs out (rule 2), so "play
+   *     until nobody acts" silently continues into the next round.
+   *   - The draw of the new head unit is resolved LAZILY inside the same
+   *     `endTurn` that starts the next round, and that event already carries the
+   *     NEW round number. Counting events whose `round` equals the current one
+   *     therefore also counts the next round's first draw (measured: a duel
+   *     reports 2 instead of 1).
+   * So the count is a DELTA of the journal, taken around the round only, and the
+   * loop stops the moment the round number moves.
    */
-  const playRound = (battle: Battle): void => {
+  const playRoundAndCountPasses = (battle: Battle): number => {
     const round = battle.getState().round;
+    const before = passesOf(battle);
 
-    let guard = 0;
-    while (battle.getState().turns.currentUnitId !== null && guard < 12) {
+    for (let guard = 0; guard < 12; guard += 1) {
+      if (battle.getState().round !== round) break;
+      if (battle.getState().turns.currentUnitId === null) break;
+
       battle.endTurn();
-      guard += 1;
-      if (battle.getState().round !== round) return;
     }
+
+    return passesOf(battle) - before;
   };
 
   it('a duel of equal speed shifts the priority exactly once per round', () => {
@@ -1046,7 +1059,7 @@ describe('002/4в — how many times the priority shifts (counting events)', () 
     for (let round = 0; round < 3; round += 1) {
       const before = passesOf(battle);
 
-      playRound(battle);
+      expect(playRoundAndCountPasses(battle)).toBe(1);
 
       // One cross-side group (a1, b1) = one situation = one shift.
       expect(passesOf(battle) - before).toBe(1);
@@ -1056,7 +1069,7 @@ describe('002/4в — how many times the priority shifts (counting events)', () 
   });
 
   it('a group of three equal-speed units is ONE situation: one shift, not three', () => {
-    // {a1, a2, a3} against {b1, b2, b3} at the same speed and level: rule 4в
+    // {a1, a2, a3} against {b1, b2, b3} at the same speed and level: rule 4v
     // says the sides alternate INSIDE the group and the priority shifts ONCE.
     const battle = makeBattle(
       setupOf(
@@ -1074,13 +1087,9 @@ describe('002/4в — how many times the priority shifts (counting events)', () 
       { coin: 0.2, enforceTurns: true },
     );
 
-    const openingPasses = passesOf(battle);
-
-    playRound(battle);
-
-    // SIX units act, but the priority shifts ONCE: a break here means rule 4в
+    // SIX units act, but the priority shifts ONCE: a break here means rule 4v
     // was implemented as "once per unit".
-    expect(passesOf(battle) - openingPasses).toBe(1);
+    expect(playRoundAndCountPasses(battle)).toBe(1);
   });
 
   it('two cross-side groups of DIFFERENT speeds shift the priority twice', () => {
@@ -1100,12 +1109,8 @@ describe('002/4в — how many times the priority shifts (counting events)', () 
       { coin: 0.2, enforceTurns: true },
     );
 
-    const openingPasses = passesOf(battle);
-
-    playRound(battle);
-
     // {a1, b1} at 17 and {a2, b2} at 9: two situations, two shifts.
-    expect(passesOf(battle) - openingPasses).toBe(2);
+    expect(playRoundAndCountPasses(battle)).toBe(2);
   });
 });
 });

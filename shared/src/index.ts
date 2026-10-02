@@ -358,9 +358,10 @@ export type BattleEvent =
   | { type: 'UnitDestroyed'; unitId: string }
   | { type: 'RoundStarted'; round: number }
   /**
-   * Начальный приоритет, пишется один раз при создании боя. `reason: 'speed'` —
-   * решила скорость, монетка не бросалась; `reason: 'coin'` — максимальные
-   * скорости сторон равны, монетку бросали (docs/tasks/002, правило 0).
+   * The opening priority, written once when the battle is created.
+   * `reason: 'speed'` — the top speeds decided it and no coin was thrown;
+   * `reason: 'coin'` — the top speeds were equal and the coin was thrown
+   * (docs/tasks/002, rule 0; docs/battle.md 15.2 rule 4a).
    */
   | { type: 'PriorityRolled'; side: BattleSide; reason: InitialPriorityReason }
   /**
@@ -403,20 +404,19 @@ export type TurnQueueState = {
    * the battle is created and passed to the other side after every draw that
    * really needed it (rules 4a/4b).
    */
-  prioritySide: BattleSide;
+  readonly prioritySide: BattleSide;
   /**
-   * Which side the priority will pass to after the next draw between the sides
-   * — always the opposite of `prioritySide` (rule 4b).
+   * The side the priority passes to after the next draw between the sides
+   * (rule 4b: always the opposite of `prioritySide`).
    *
-   * It is stored rather than calculated by the interface: rule 4b is a GAME
-   * RULE, and game rules live only in the battle engine, never in the sandbox or
-   * the client. It is written through `setPrioritySide` in `battle.ts` — the one
-   * place that changes the priority — plus a literal when the battle is created,
-   * which `rollPriority` immediately overwrites with the real value. Two writers
-   * exist, so this is not a guarantee: an invariant test checks that the two
-   * fields stay opposite after creation and after every command.
+   * Stored, not derived by readers: rule 4b is a game rule and lives only in the
+   * battle engine. The sandbox and the client display this field and never
+   * calculate it. Both priority fields are created together by `priorityPair`
+   * (from `createBattle` for the starting pair, which `rollPriority` overwrites
+   * at once, and from `setPrioritySide` for every later change). An invariant
+   * test checks that they stay opposite after creation and after every command.
    */
-  nextPrioritySide: BattleSide;
+  readonly nextPrioritySide: BattleSide;
   /**
    * Why the priority was given the way it was when the battle was created:
    * the speeds decided it, or the coin was flipped. Shown next to the indicator

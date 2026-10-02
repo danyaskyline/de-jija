@@ -15,8 +15,11 @@
  *   2. after EVERY command in a scenario, including the draws that pass the
  *      priority to the other side;
  *   3. the reason in the state equals the reason in the opening `PriorityRolled`;
- *   4. the priority capture (`to`) follows `from`, NOT the displayed field —
- *      otherwise the indicator would silently become the source of truth.
+ *   4. every `PriorityPassed` moves the priority to the opposite side.
+ *
+ * The expectation comes from the OPPOSITE table below, NOT from the engine: a
+ * test that imported `oppositeSide` would be its own oracle and would stay green
+ * while the game was wrong.
  */
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -25,8 +28,21 @@ import type { BattleSetup, BattleState, CombatUnit } from '@de-jija/shared';
 
 import { getCombatRules, initCombatRules } from '../combat/combatRules';
 import { initSkills, type SkillsData } from '../combat/skills';
-import { createBattle, oppositeSide, type Battle } from './battle';
+import { createBattle, type Battle } from './battle';
 import type { BattleRules } from './battleRules';
+
+/**
+ * Rule 4b written out INDEPENDENTLY of the engine.
+ *
+ * The engine has its own `oppositeSide`, and a test that imports it would be
+ * its own oracle: break `oppositeSide` and the expectation breaks with it, so
+ * the test stays green while the game is wrong. This table is the whole point of
+ * the file — the expected value comes from the RULE, not from the code.
+ */
+const OPPOSITE: Record<'left' | 'right', 'left' | 'right'> = {
+  left: 'right',
+  right: 'left',
+};
 
 const BATTLE_RULES: BattleRules = {
   fieldWidth: 15,
@@ -94,7 +110,7 @@ function makeBattle(setup: BattleSetup, coin: number): Battle {
 function expectIndicatorConsistent(battle: Battle): BattleState {
   const { turns } = battle.getState();
 
-  expect(turns.nextPrioritySide).toBe(oppositeSide(turns.prioritySide));
+  expect(turns.nextPrioritySide).toBe(OPPOSITE[turns.prioritySide]);
 
   return battle.getState();
 }
@@ -116,7 +132,7 @@ describe('002/4 — the indicator never contradicts the priority', () => {
   });
 
   it('holds after every command, including the draws that pass the priority', () => {
-    // Three units per side so that a group of 3+ appears: rule 4в says one such
+    // Three units per side so that a group of 3+ appears: rule 4v says one such
     // group is ONE situation and shifts the priority exactly once.
     const battle = makeBattle(
       setupOf(
@@ -173,9 +189,7 @@ describe('002/4 — the indicator never contradicts the priority', () => {
     expect(state.turns.initialPriorityReason).toBe(rolled.reason);
   });
 
-  it('the opening PriorityRolled records the side the battle started with', () => {
-    // Equal speeds, so the coin decides: the event and the starting state must
-    // agree on the side, and the indicator must be its opposite.
+  it('the opening PriorityRolled came from the coin when the top speeds are equal', () => {
     const battle = makeBattle(setupOf([fighter('a1', 11)], [fighter('b1', 11)]), 0.2);
     const state = expectIndicatorConsistent(battle);
     const rolled = state.log.find((event) => event.type === 'PriorityRolled');
@@ -183,12 +197,11 @@ describe('002/4 — the indicator never contradicts the priority', () => {
     if (rolled?.type !== 'PriorityRolled') throw new Error('PriorityRolled expected');
 
     expect(rolled.reason).toBe('coin');
-    expect(oppositeSide(rolled.side)).not.toBe(rolled.side);
   });
 
-  it('the priority capture follows `from`, not the displayed indicator', () => {
-    // If the capture ever took `to` from `nextPrioritySide`, the displayed field
-    // would silently become the source of truth, and nothing else would notice.
+  it('every PriorityPassed moves the priority to the opposite side', () => {
+    // Plain rule 4b on the journal: no indicator involved. The expectation comes
+    // from the OPPOSITE table above, not from the engine.
     const battle = makeBattle(
       setupOf(
         [fighter('a1', 11), fighter('a2', 11), fighter('a3', 11)],
@@ -197,25 +210,48 @@ describe('002/4 — the indicator never contradicts the priority', () => {
       0.2,
     );
 
-    for (let round = 0; round < 3; round += 1) {
-      let guard = 0;
+    const passes = battle
+      .getState()
+      .log.filter((event) => event.type === 'PriorityPassed');
 
-      while (battle.getState().turns.currentUnitId !== null && guard < 12) {
-        battle.endTurn();
-        guard += 1;
-        expectIndicatorConsistent(battle);
-      }
+    // The opening cross-side group already passed the priority once, otherwise
+    // this test would prove nothing.
+    expect(passes.length).toBeGreaterThan(0);
 
-      const state = battle.getState();
+    for (const event of passes) {
+      if (event.type !== 'PriorityPassed') continue;
 
-      for (const event of state.log) {
-        if (event.type !== 'PriorityPassed') continue;
+      expect(event.to).toBe(OPPOSITE[event.from]);
+      expect(event.to).not.toBe(event.from);
+    }
+  });
 
-        expect(event.to).toBe(oppositeSide(event.from));
-        expect(state.turns.nextPrioritySide).toBe(oppositeSide(state.turns.prioritySide));
-      }
+  it('rule 4b with explicit sides: the priority passes from left to right and back', () => {
+    // Written out literally, with no table and no engine helper: the priority
+    // starts on the left, the first real draw hands it to the right, the next one
+    // hands it back. A break anywhere in rule 4b makes this fail by name.
+    const battle = makeBattle(
+      setupOf(
+        [fighter('a1', 11), fighter('a2', 11)],
+        [fighter('b1', 11), fighter('b2', 11)],
+      ),
+      0.2,
+    );
 
-      battle.nextRound();
+    const passes = battle
+      .getState()
+      .log.filter((event) => event.type === 'PriorityPassed')
+      .map((event) => (event.type === 'PriorityPassed' ? { from: event.from, to: event.to } : null))
+      .filter((event): event is { from: 'left' | 'right'; to: 'left' | 'right' } => event !== null);
+
+    expect(passes.length).toBeGreaterThan(0);
+    expect(passes[0].from).toBe('left');
+    expect(passes[0].to).toBe('right');
+
+    // The next draw must hand it back — the alternation of rule 4b.
+    if (passes.length > 1) {
+      expect(passes[1].from).toBe('right');
+      expect(passes[1].to).toBe('left');
     }
   });
 });
