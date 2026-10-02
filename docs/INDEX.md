@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 62. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 65. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -81,6 +81,7 @@
 
 ## tools
 
+- [`tools/check-docs.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/check-docs.mjs) — _без экспортов_
 - [`tools/gen-index.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/gen-index.mjs) — _без экспортов_
 
 ## .clinerules
@@ -88,5 +89,10 @@
 - [`.clinerules/01-workflow.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/01-workflow.md) — Правила работы над проектом de-jija
 - [`.clinerules/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/handoff.md) — Процедуры handoff / continue / sync — в `.clinerules/workflows/`. Постоянные правила — в `01-workflow.md`.
 - [`.clinerules/workflows/continue.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/workflows/continue.md) — Continue — начать/продолжить сессию
+- [`.clinerules/workflows/done.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/workflows/done.md) — Done — закрыть шаг или задачу
 - [`.clinerules/workflows/handoff.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/workflows/handoff.md) — Handoff — передать контекст в новый чат
 - [`.clinerules/workflows/sync.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.clinerules/workflows/sync.md) — Sync — записать решения из веб-чата
+
+## .githooks
+
+- [`.githooks/pre-commit`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.githooks/pre-commit)

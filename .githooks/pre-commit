@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# pre-commit hook: keep docs/INDEX.md in sync with the repository structure.
+# Enabled by: git config core.hooksPath .githooks
+# Runs under Git Bash on Windows. Never fails the commit — warnings only.
+
+echo "[pre-commit] regenerating docs/INDEX.md ..."
+npm run map --silent 2>/dev/null || echo "[pre-commit] npm run map failed, continuing"
+
+if ! git diff --quiet -- docs/INDEX.md; then
+  git add docs/INDEX.md
+  echo "[pre-commit] docs/INDEX.md updated and staged"
+fi
+exit 0
