@@ -13,12 +13,14 @@
   "dependencies": {
     "@de-jija/shared": "*",
     "express": "^5.2.1",
+    "pg": "^8.23.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
     "jsdom": "^30.1.1",
     "tsx": "^4.23.15",

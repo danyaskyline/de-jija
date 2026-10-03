@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 102. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 107. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -40,6 +40,9 @@
 - [`server/debug/battle-sandbox.html`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/debug/battle-sandbox.html) — _HTML-страница_
 - [`server/debug/combat-sandbox.html`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/debug/combat-sandbox.html) — _HTML-страница_
 - [`server/package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/package.json) — _данные/конфиг (JSON)_
+- [`server/src/auth/accounts.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/auth/accounts.test.ts) — _без экспортов_
+- [`server/src/auth/accounts.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/auth/accounts.ts) — экспорты: PlayerRow, PublicPlayer, AuthError, AuthResult, createInvite, listOpenInvites, …
+- [`server/src/auth/password.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/auth/password.ts) — экспорты: hashPassword, verifyPassword, PasswordProblem, checkPassword, checkEmail, normalizeEmail
 - [`server/src/battle/battle.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.test.ts) — _без экспортов_
 - [`server/src/battle/battle.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battle.ts) — экспорты: BattleDeps, CommandOk, oppositeSide, priorityPair, Battle, createBattle
 - [`server/src/battle/battleRules.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/battle/battleRules.test.ts) — _без экспортов_
@@ -60,6 +63,8 @@
 - [`server/src/combat/skills.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/skills.test.ts) — _без экспортов_
 - [`server/src/combat/skills.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/skills.ts) — экспорты: DEFAULT_SKILLS_PATH, SkillTarget, SKILL_TARGETS, SkillEffect, Skill, SkillsData, …
 - [`server/src/combat/testFixtures.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/combat/testFixtures.ts) — экспорты: CombatFixture, combatFixtures, getFixture, fixtureToUnit, antimage, swordsman, …
+- [`server/src/db/db.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/db/db.ts) — экспорты: dbConfig, isLocalDatabase, getPool, closePool, query, queryOne, …
+- [`server/src/db/migrations.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/db/migrations.ts) — экспорты: runMigrations, migrationStatus, dropAll
 - [`server/src/debug/battleDebugRoutes.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/battleDebugRoutes.test.ts) — _без экспортов_
 - [`server/src/debug/battleDebugRoutes.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/battleDebugRoutes.ts) — экспорты: MAX_BATTLES, clearBattles, battleCount, createBattleDebugRouter
 - [`server/src/debug/battleSandboxPage.smoke.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/battleSandboxPage.smoke.test.ts) — _без экспортов_
