@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 97. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 98. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -11,9 +11,10 @@
 - [`.gitattributes`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.gitattributes)
 - [`.gitignore`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/.gitignore)
 - [`AGENTS.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/AGENTS.md) — de-jija — для ИИ-агентов
+- [`desktop.ini`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/desktop.ini)
 - [`package.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/package.json) — _данные/конфиг (JSON)_
 - [`README.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/README.md) — de-jija
-- [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md) — ﻿## ЧАСТЬ B. Текущее состояние
+- [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md) — ﻿# START-HERE — входная точка для ИИ-агента
 - [`tsconfig.base.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tsconfig.base.json) — _данные/конфиг (JSON)_
 
 ## docs
