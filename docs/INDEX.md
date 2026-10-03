@@ -1,7 +1,7 @@
 # Карта репозитория de-jija
 
 > Файл сгенерирован скриптом `tools/gen-index.mjs` (`npm run map`). Не редактировать вручную.
-> Всего файлов: 98. Обновляй карту после добавления/удаления/переименования файлов.
+> Всего файлов: 102. Обновляй карту после добавления/удаления/переименования файлов.
 
 Как читать репо экономно: сначала [`START-HERE.md`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/START-HERE.md), потом сюда — и открывать только нужный файл, а не всё дерево.
 
@@ -66,6 +66,8 @@
 - [`server/src/debug/debugRoutes.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/debugRoutes.test.ts) — _без экспортов_
 - [`server/src/debug/debugRoutes.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/debug/debugRoutes.ts) — экспорты: createDebugRouter
 - [`server/src/index.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/index.ts) — _без экспортов_
+- [`server/src/units/heroTypes.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/units/heroTypes.test.ts) — _без экспортов_
+- [`server/src/units/heroTypes.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/units/heroTypes.ts) — экспорты: DEFAULT_HERO_TYPES_PATH, SkillPrice, HeroType, HeroTypesData, loadHeroTypes, findHeroType, …
 - [`server/src/units/units.test.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/units/units.test.ts) — _без экспортов_
 - [`server/src/units/units.ts`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/src/units/units.ts) — экспорты: DEFAULT_UNITS_PATH, UnitRace, UnitData, UnitsData, loadUnits, stackCost, …
 - [`server/tsconfig.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/server/tsconfig.json) — _данные/конфиг (JSON)_
@@ -88,11 +90,13 @@
 
 - [`config/battle-rules.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/battle-rules.json) — _данные/конфиг (JSON)_
 - [`config/combat-rules.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/combat-rules.json) — _данные/конфиг (JSON)_
+- [`config/hero-types.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/hero-types.json) — _данные/конфиг (JSON)_
 - [`config/skills.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/skills.json) — _данные/конфиг (JSON)_
 - [`config/units.json`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/config/units.json) — _данные/конфиг (JSON)_
 
 ## tools
 
+- [`tools/build-hero-types-data.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/build-hero-types-data.mjs) — _без экспортов_
 - [`tools/build-units-data.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/build-units-data.mjs) — _без экспортов_
 - [`tools/check-docs.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/check-docs.mjs) — _без экспортов_
 - [`tools/checks/active-task.mjs`](https://raw.githubusercontent.com/danyaskyline/de-jija/main/tools/checks/active-task.mjs) — экспорты: checkActiveTask

@@ -26,6 +26,7 @@ import { createBattleDebugRouter } from './debug/battleDebugRoutes';
 import { DEFAULT_COMBAT_RULES_PATH, initCombatRules } from './combat/combatRules';
 import { DEFAULT_SKILLS_PATH, initSkills } from './combat/skills';
 import { DEFAULT_UNITS_PATH, initUnits } from './units/units';
+import { DEFAULT_HERO_TYPES_PATH, initHeroTypes } from './units/heroTypes';
 import { createDebugRouter } from './debug/debugRoutes';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -68,8 +69,12 @@ try {
   console.log(
     `[config] ${units.units.length} units in ${units.races.length} factions loaded from ${DEFAULT_UNITS_PATH}`,
   );
+
+  // Hero templates: who can learn which skill, and at what price each level.
+  const heroTypes = initHeroTypes();
+
+  console.log(`[config] ${heroTypes.heroes.length} hero types loaded from ${DEFAULT_HERO_TYPES_PATH}`);
 } catch (error) {
-  console.error('[config] РќР• РЈР”РђР›РћРЎР¬ Р—РђР“Р РЈР—РРўР¬ РљРћРќР¤РР“ вЂ” СЃРµСЂРІРµСЂ РЅРµ СЃС‚Р°СЂС‚СѓРµС‚:');
   console.error(`[config] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
@@ -168,4 +173,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     httpServer.close(() => process.exit(0));
   });
 }
+
+
 
