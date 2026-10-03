@@ -6,7 +6,7 @@
  *  - an invite works exactly once, even if two people click at the same time;
  *  - a password is never stored as text.
  *
- * The tables are dropped and rebuilt before each run, so the test never depends
+ * The tables are dropped and rebuilt before the run, so the test never depends
  * on leftover data and never touches anything the author cares about.
  */
 
@@ -14,24 +14,6 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { closePool, query, queryOne } from '../db/db';
 import { dropAll, runMigrations } from '../db/migrations';
-
-/**
- * These tests need a REAL PostgreSQL. When there is none (CI without a
- * database, or a contributor who has not started Postgres yet) they are
- * SKIPPED, not failed: a missing database is an environment problem, not a
- * broken account rule.
- */
-const databaseReady = await canReachDatabase();
-
-async function canReachDatabase(): Promise<boolean> {
-  try {
-    await runMigrations();
-
-    return true;
-  } catch {
-    return false;
-  }
-}
 import {
   createInvite,
   inviteIsOpen,
@@ -41,16 +23,53 @@ import {
 } from './accounts';
 import { checkEmail, checkPassword, hashPassword, verifyPassword } from './password';
 
+
+/**
+ * These tests need a REAL PostgreSQL. When there is none they are SKIPPED, not
+ * failed: a missing database is an environment problem, not a broken rule.
+ */
+/**
+ * Asks the database one real question. Any failure means "no database here",
+ * and the suites below are skipped instead of failed.
+ */
+async function canReachDatabase(): Promise<boolean> {
+  try {
+    await runMigrations();
+
+    return true;
+  } catch (error) {
+    if (process.env.DEBUG_DB) {
+      console.error('[db] not reachable:', error);
+    }
+
+    return false;
+  }
+}
+
+const databaseReady = await canReachDatabase();
+
 beforeAll(async () => {
+  if (!databaseReady) {
+    return;
+  }
+
   await dropAll();
   await runMigrations();
 });
 
 afterAll(async () => {
+  if (!databaseReady) {
+    return;
+  }
+
   await closePool();
 });
 
 afterEach(async () => {
+  if (!databaseReady) {
+    return;
+  }
+
   await query('DELETE FROM invites');
   await query('DELETE FROM players');
 });
@@ -134,15 +153,22 @@ describe.skipIf(!databaseReady)('registration - invitation only', () => {
     expect(Object.keys(result.ok ? result.player : {})).not.toContain('password_salt');
   });
 
-  it('refuses a registration with an unknown invite', async () => {
+  it('refuses a registration with an invite that does not exist', async () => {
     const result = await registerWithInvite('a@mail.ru', 'good-password', 'no-such-token');
 
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.code).toBe('invite_missing');
+    // An unknown link and a spent link are one and the same for the player:
+    // the link did not work. One code, so the form cannot probe for real tokens.
+    expect(result.ok === false && result.code).toBe('invite_used');
+
+    const count = await queryOne<{ count: string }>('SELECT count(*)::text AS count FROM players');
+
+    expect(Number(count?.count)).toBe(0);
   });
 
   it('refuses a second registration with the same invite', async () => {
     const token = await createInvite();
+
 
     const first = await registerWithInvite('first@mail.ru', 'good-password', token);
     const second = await registerWithInvite('second@mail.ru', 'good-password', token);
@@ -216,5 +242,7 @@ describe.skipIf(!databaseReady)('login', () => {
     expect(unknownEmail.ok === false && unknownEmail.code).toBe('wrong_credentials');
   });
 });
+
+
 
 

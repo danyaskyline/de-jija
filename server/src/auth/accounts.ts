@@ -46,7 +46,6 @@ export type PublicPlayer = {
 export type AuthError =
   | 'bad_email'
   | 'bad_password'
-  | 'invite_missing'
   | 'invite_used'
   | 'email_taken'
   | 'wrong_credentials';
@@ -58,8 +57,7 @@ export type AuthResult =
 const MESSAGES: Record<AuthError, string> = {
   bad_email: 'Похоже, это не почта',
   bad_password: 'Пароль должен быть не короче 8 символов',
-  invite_missing: 'Ссылка-приглашение не найдена',
-  invite_used: 'Эта ссылка уже использована',
+  invite_used: 'Ссылка-приглашение не сработала: её нет или она уже использована',
   email_taken: 'Эта почта уже зарегистрирована',
   wrong_credentials: 'Неверная почта или пароль',
 };
@@ -225,3 +223,5 @@ export async function findPlayerById(id: number): Promise<PublicPlayer | null> {
 
   return row === null ? null : toPublic(row);
 }
+
+
